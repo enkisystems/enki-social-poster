@@ -6,66 +6,46 @@ from pathlib import Path
 BUFFER_TOKEN = os.environ["BUFFER_ACCESS_TOKEN"]
 
 # -----------------------------
-# GraphQL helper
+# Buffer REST API helper
 # -----------------------------
-def graphql(query, variables=None):
-    response = requests.post(
-        "https://graphql.buffer.com",
-        json={
-            "query": query,
-            "variables": variables or {}
-        },
-        headers={
-            "Authorization": f"Bearer {BUFFER_TOKEN}",
-            "Content-Type": "application/json"
-        }
-    )
+def buffer_get(url):
+    return requests.get(url, params={
+        "access_token": BUFFER_TOKEN
+    }).json()
 
-    print("STATUS:", response.status_code)
-    print("RESPONSE:", response.text)
-
-    response.raise_for_status()
-    return response.json()
+def buffer_post(url, data):
+    data["access_token"] = BUFFER_TOKEN
+    return requests.post(url, data=data).json()
 
 # -----------------------------
-# Get channels
+# Get profiles (channels)
 # -----------------------------
-query = """
-query {
-  channels {
-    id
-    service
-    name
-  }
-}
-"""
+profiles = buffer_get("https://api.bufferapp.com/1/profiles.json")
 
-result = graphql(query)
+print("Connected profiles:")
+for p in profiles:
+    print(p["id"], p["formatted_service"])
 
-channels = result["data"]["channels"]
-
-print("Connected channels:")
-for c in channels:
-    print(c)
+profile_ids = [p["id"] for p in profiles]
 
 # -----------------------------
-# Pick random caption
+# Load captions
 # -----------------------------
 with open("captions.txt", "r", encoding="utf-8") as f:
     captions = [line.strip() for line in f if line.strip()]
 
 if not captions:
-    raise Exception("captions.txt is empty")
+    raise Exception("No captions found")
 
 caption = random.choice(captions)
 
 # -----------------------------
-# Pick random image
+# Load images
 # -----------------------------
 images = list(Path("images").glob("*"))
 
 if not images:
-    raise Exception("No images found in /images folder")
+    raise Exception("No images found")
 
 image = random.choice(images)
 
@@ -73,50 +53,23 @@ image = random.choice(images)
 # GitHub raw image URL
 # -----------------------------
 repo = os.environ["GITHUB_REPOSITORY"]
-branch = "main"
 
-image_url = f"https://raw.githubusercontent.com/{repo}/{branch}/images/{image.name}"
+image_url = f"https://raw.githubusercontent.com/{repo}/main/images/{image.name}"
 
-print("Selected image:", image.name)
-print("Selected caption:", caption)
-
-# -----------------------------
-# Channel IDs
-# -----------------------------
-channel_ids = [c["id"] for c in channels]
+print("Image:", image.name)
+print("Caption:", caption)
 
 # -----------------------------
-# Create post
+# Create Buffer update
 # -----------------------------
-mutation = """
-mutation CreatePost($input: CreatePostInput!) {
-  createPost(input: $input) {
-    ... on Post {
-      id
-      status
+response = buffer_post(
+    "https://api.bufferapp.com/1/updates/create.json",
+    data={
+        "text": caption,
+        "profile_ids[]": profile_ids,
+        "media[photo]": image_url
     }
+)
 
-    ... on MutationError {
-      message
-    }
-  }
-}
-"""
-
-variables = {
-    "input": {
-        "channelIds": channel_ids,
-        "content": {
-            "text": caption,
-            "media": [
-                {
-                    "url": image_url
-                }
-            ]
-        }
-    }
-}
-
-post_result = graphql(mutation, variables)
-
-print(post_result)
+print("Buffer response:")
+print(response)
