@@ -10,7 +10,7 @@ BUFFER_TOKEN = os.environ["BUFFER_ACCESS_TOKEN"]
 # -----------------------------
 def graphql(query, variables=None):
     response = requests.post(
-        "https://api.buffer.com",
+        "https://graphql.buffer.com",
         json={
             "query": query,
             "variables": variables or {}
@@ -20,6 +20,9 @@ def graphql(query, variables=None):
             "Content-Type": "application/json"
         }
     )
+
+    print("STATUS:", response.status_code)
+    print("RESPONSE:", response.text)
 
     response.raise_for_status()
     return response.json()
@@ -51,20 +54,28 @@ for c in channels:
 with open("captions.txt", "r", encoding="utf-8") as f:
     captions = [line.strip() for line in f if line.strip()]
 
+if not captions:
+    raise Exception("captions.txt is empty")
+
 caption = random.choice(captions)
 
 # -----------------------------
 # Pick random image
 # -----------------------------
 images = list(Path("images").glob("*"))
+
+if not images:
+    raise Exception("No images found in /images folder")
+
 image = random.choice(images)
 
 # -----------------------------
 # GitHub raw image URL
 # -----------------------------
 repo = os.environ["GITHUB_REPOSITORY"]
+branch = "main"
 
-image_url = f"https://raw.githubusercontent.com/{repo}/main/images/{image.name}"
+image_url = f"https://raw.githubusercontent.com/{repo}/{branch}/images/{image.name}"
 
 print("Selected image:", image.name)
 print("Selected caption:", caption)
