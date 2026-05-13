@@ -5,11 +5,10 @@ from pathlib import Path
 
 BUFFER_TOKEN = os.environ["BUFFER_ACCESS_TOKEN"]
 
-# -----------------------------
+# ---------------------------------------------------
 # GraphQL helper
-# -----------------------------
+# ---------------------------------------------------
 def graphql(query, variables=None):
-
     response = requests.post(
         "https://api.buffer.com",
         json={
@@ -27,16 +26,15 @@ def graphql(query, variables=None):
 
     data = response.json()
 
-    # GraphQL errors
     if "errors" in data:
         raise Exception(data["errors"])
 
     return data["data"]
 
 
-# -----------------------------
+# ---------------------------------------------------
 # Get organization
-# -----------------------------
+# ---------------------------------------------------
 org_query = """
 query GetOrganizations {
   account {
@@ -57,15 +55,15 @@ if not organizations:
 
 organization_id = organizations[0]["id"]
 
-print("Using organization:", organizations[0]["name"])
+print("\nUsing organization:", organizations[0]["name"])
 
 
-# -----------------------------
+# ---------------------------------------------------
 # Get channels
-# -----------------------------
+# ---------------------------------------------------
 channels_query = """
-query GetChannels($organizationId: OrganizationId!) {
-  channels(input: { organizationId: $organizationId }) {
+query GetChannels($orgId: ID!) {
+  channels(input: { organizationId: $orgId }) {
     id
     name
     service
@@ -75,9 +73,7 @@ query GetChannels($organizationId: OrganizationId!) {
 
 channels_data = graphql(
     channels_query,
-    {
-        "organizationId": organization_id
-    }
+    {"orgId": organization_id}
 )
 
 channels = channels_data["channels"]
@@ -91,9 +87,9 @@ for c in channels:
     print(c)
 
 
-# -----------------------------
+# ---------------------------------------------------
 # Load captions
-# -----------------------------
+# ---------------------------------------------------
 with open("captions.txt", "r", encoding="utf-8") as f:
     captions = [line.strip() for line in f if line.strip()]
 
@@ -103,9 +99,9 @@ if not captions:
 caption = random.choice(captions)
 
 
-# -----------------------------
-# Load images
-# -----------------------------
+# ---------------------------------------------------
+# Load image
+# ---------------------------------------------------
 images = list(Path("images").glob("*"))
 
 if not images:
@@ -114,9 +110,9 @@ if not images:
 image = random.choice(images)
 
 
-# -----------------------------
-# GitHub raw image URL
-# -----------------------------
+# ---------------------------------------------------
+# Build raw GitHub URL
+# ---------------------------------------------------
 repo = os.environ["GITHUB_REPOSITORY"]
 
 image_url = (
@@ -129,12 +125,11 @@ print("Selected caption:", caption)
 print("Image URL:", image_url)
 
 
-# -----------------------------
+# ---------------------------------------------------
 # Create post mutation
-# -----------------------------
+# ---------------------------------------------------
 mutation = """
 mutation CreatePost($input: CreatePostInput!) {
-
   createPost(input: $input) {
 
     ... on PostActionSuccess {
@@ -154,34 +149,42 @@ mutation CreatePost($input: CreatePostInput!) {
 """
 
 
-# -----------------------------
-# Post to ALL channels
-# -----------------------------
+# ---------------------------------------------------
+# Post to each channel
+# ---------------------------------------------------
 for channel in channels:
 
-    print(f"\nPosting to {channel['service']}...")
+    service = channel["service"]
+
+    print(f"\nPosting to {service}...")
+
+    assets = [
+        {
+            "image": {
+                "url": image_url
+            }
+        }
+    ]
+
+    input_data = {
+        "channelId": channel["id"],
+        "text": caption,
+        "schedulingType": "automatic",
+        "mode": "addToQueue",
+        "assets": assets
+    }
+
+    # Instagram + Facebook require channelData.postType
+    if service in ["instagram", "facebook"]:
+
+        input_data["channelData"] = {
+            "instagram": {
+                "postType": "post"
+            }
+        }
 
     variables = {
-        "input": {
-
-            "channelId": channel["id"],
-
-            "text": caption,
-
-            "schedulingType": "automatic",
-
-            "mode": "addToQueue",
-
-            "type": "post",
-
-            "assets": [
-                {
-                    "image": {
-                        "url": image_url
-                    }
-                }
-            ]
-        }
+        "input": input_data
     }
 
     result = graphql(mutation, variables)
