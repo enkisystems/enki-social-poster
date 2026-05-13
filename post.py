@@ -172,9 +172,7 @@ for channel in channels:
 
             "mode": "addToQueue",
 
-            "metadata": {
-                "type": "post"
-            },
+            "type": "post",
 
             "assets": [
                 {
