@@ -130,39 +130,49 @@ print("Selected caption:", caption)
 # -----------------------------
 # Create post
 # -----------------------------
+# -----------------------------
+# Create post
+# -----------------------------
 mutation = """
-query {
-  __type(name: "SchedulingType") {
-    enumValues {
-      name
-    }
-  }
+mutation CreatePost($input: CreatePostInput!) {
+  createPost(input: $input) {
 
-  shareMode: __type(name: "ShareMode") {
-    enumValues {
-      name
+    ... on PostActionSuccess {
+      post {
+        id
+        status
+      }
+    }
+
+    ... on MutationError {
+      message
     }
   }
 }
 """
 
-variables = {}
+# Try Instagram ONLY first
+instagram_channel = next(
+    c for c in channels if c["service"] == "instagram"
+)
 
 variables = {
     "input": {
-        "channelId": channel_ids[0],
+        "channelId": instagram_channel["id"],
 
-        "mode": "PUBLISH",
+        "mode": "shareNow",
 
-        "schedulingType": "NOW",
+        "schedulingType": "automatic",
 
-        "text": caption
+        "text": caption,
+
+        "mediaInput": {
+            "photo": image_url
+        }
     }
 }
 
-result = graphql(mutation, variables)
-
-print(result)
+post_result = graphql(mutation, variables)
 
 print("POST RESULT:")
 print(post_result)
