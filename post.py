@@ -124,27 +124,30 @@ image_url = (
 print("Image URL:", image_url)
 
 # -------------------------------------------------
-# Create post mutation
+# Inspect AssetInput fields
 # -------------------------------------------------
 mutation = """
-mutation CreatePost($input: CreatePostInput!) {
-  createPost(input: $input) {
-
-    ... on PostActionSuccess {
-      post {
-        id
-        text
-        dueAt
-        status
+query {
+  __type(name: "AssetInput") {
+    inputFields {
+      name
+      type {
+        name
+        kind
+        ofType {
+          name
+          kind
+        }
       }
-    }
-
-    ... on MutationError {
-      message
     }
   }
 }
 """
+
+result = graphql(mutation)
+
+print("ASSET INPUT SCHEMA:")
+print(result)
 
 # -------------------------------------------------
 # Post to each channel
