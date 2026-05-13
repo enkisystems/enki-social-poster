@@ -5,13 +5,14 @@ import requests
 API_URL = "https://api.buffer.com/graphql"
 
 # ----------------------------
-# AUTH (supports both env names)
+# AUTH
 # ----------------------------
 TOKEN = os.getenv("BUFFER_ACCESS_TOKEN") or os.getenv("BUFFER_API_KEY")
 
 if not TOKEN:
-    print("❌ ERROR: Missing BUFFER_ACCESS_TOKEN / BUFFER_API_KEY")
-    print("Available env vars:", list(os.environ.keys()))
+    print("\n❌ ERROR: Missing BUFFER_ACCESS_TOKEN / BUFFER_API_KEY")
+    print("\nAvailable environment variables:")
+    print(list(os.environ.keys()))
     exit(1)
 
 HEADERS = {
@@ -23,15 +24,18 @@ HEADERS = {
 # GRAPHQL HELPER
 # ----------------------------
 def graphql(query, variables=None):
-    res = requests.post(
+    response = requests.post(
         API_URL,
-        json={"query": query, "variables": variables or {}},
+        json={
+            "query": query,
+            "variables": variables or {}
+        },
         headers=HEADERS
     )
 
-    data = res.json()
+    data = response.json()
 
-    print("\nSTATUS:", res.status_code)
+    print("\nSTATUS:", response.status_code)
     print("RESPONSE:", data)
 
     if "errors" in data:
@@ -53,7 +57,13 @@ query {
 }
 """
 
-orgs = graphql(org_query)["account"]["organizations"]
+org_data = graphql(org_query)
+
+orgs = org_data["account"]["organizations"]
+
+if not orgs:
+    raise Exception("No organizations found")
+
 org_id = orgs[0]["id"]
 
 print("\nUsing organization:", orgs[0]["name"])
@@ -71,54 +81,72 @@ query ($orgId: OrganizationId!) {
 }
 """
 
-channels = graphql(channels_query, {"orgId": org_id})["channels"]
+channels_data = graphql(
+    channels_query,
+    {"orgId": org_id}
+)
+
+channels = channels_data["channels"]
 
 print("\nConnected channels:")
-for c in channels:
-    print(c)
+
+for channel in channels:
+    print(channel)
 
 # ----------------------------
-# RANDOM IMAGE FROM FOLDER
+# RANDOM IMAGE
 # ----------------------------
 IMAGE_FOLDER = "./images"
 
-images = [
-    f for f in os.listdir(IMAGE_FOLDER)
-    if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))
+all_images = [
+    file for file in os.listdir(IMAGE_FOLDER)
+    if file.lower().endswith((
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".webp"
+    ))
 ]
 
-if not images:
+if not all_images:
     raise Exception("No images found in ./images")
 
-image_file = random.choice(images)
-image_path = os.path.join(IMAGE_FOLDER, image_file)
+selected_image = random.choice(all_images)
 
 IMAGE_URL = (
-    "https://raw.githubusercontent.com/enkisystems/enki-social-poster/main/images/"
-    + image_file
+    "https://raw.githubusercontent.com/"
+    "enkisystems/enki-social-poster/main/images/"
+    + selected_image
 )
 
 # ----------------------------
 # RANDOM CAPTION
 # ----------------------------
-with open("captions.txt", "r", encoding="utf-8") as f:
-    captions = [line.strip() for line in f if line.strip()]
+CAPTION_FILE = "captions.txt"
+
+with open(CAPTION_FILE, "r", encoding="utf-8") as file:
+    captions = [
+        line.strip()
+        for line in file.readlines()
+        if line.strip() and line.strip() != "========="
+    ]
 
 if not captions:
-    raise Exception("No captions found in captions.txt")
+    raise Exception("No captions found")
 
-caption = random.choice(captions)
+selected_caption = random.choice(captions)
 
-print("\nSelected image:", image_file)
-print("Selected caption:", caption)
+print("\nSelected image:", selected_image)
+print("Selected caption:", selected_caption)
 print("Image URL:", IMAGE_URL)
 
 # ----------------------------
-# GRAPHQL MUTATION
+# CREATE POST MUTATION
 # ----------------------------
 mutation = """
 mutation CreatePost($input: CreatePostInput!) {
   createPost(input: $input) {
+
     ... on PostActionSuccess {
       post {
         id
@@ -126,36 +154,35 @@ mutation CreatePost($input: CreatePostInput!) {
         dueAt
       }
     }
+
     ... on MutationError {
       message
     }
+
   }
 }
 """
 
 # ----------------------------
-# BUILD PLATFORM PAYLOAD
+# BUILD PAYLOAD
 # ----------------------------
 def build_payload(channel):
-    service = channel["service"]
 
     payload = {
         "channelId": channel["id"],
-        "text": caption,
+        "text": selected_caption,
         "schedulingType": "automatic",
-        "mode": "addToQueue",
-        "assets": [
-            {
-                "image": {
-                    "url": IMAGE_URL
-                }
-            }
-        ]
+        "mode": "addToQueue"
     }
 
-    # REQUIRED FIX: Instagram + Facebook need type
-    if service in ["instagram", "facebook"]:
-        payload["type"] = "story"   # safest working option
+    # Add image asset
+    payload["assets"] = [
+        {
+            "image": {
+                "url": IMAGE_URL
+            }
+        }
+    ]
 
     return payload
 
@@ -163,20 +190,61 @@ def build_payload(channel):
 # SEND POST
 # ----------------------------
 def send_post(channel):
+
     payload = build_payload(channel)
 
-    print(f"\nPosting to {channel['service']} ({channel['name']})...")
+    print(
+        f"\nPosting to "
+        f"{channel['service']} "
+        f"({channel['name']})..."
+    )
 
     try:
-        result = graphql(mutation, {"input": payload})
+
+        result = graphql(
+            mutation,
+            {"input": payload}
+        )
+
         print("\nPOST RESULT:")
         print(result)
-    except Exception as e:
+
+    except Exception as error:
+
         print(f"\n❌ FAILED on {channel['service']}")
-        print(e)
+        print(error)
+
+        # ---------------------------------
+        # FALLBACK: TRY TEXT ONLY
+        # ---------------------------------
+        fallback_payload = {
+            "channelId": channel["id"],
+            "text": selected_caption,
+            "schedulingType": "automatic",
+            "mode": "addToQueue"
+        }
+
+        print("\n🔁 Retrying text-only fallback...")
+
+        try:
+
+            fallback_result = graphql(
+                mutation,
+                {"input": fallback_payload}
+            )
+
+            print("\nFALLBACK SUCCESS:")
+            print(fallback_result)
+
+        except Exception as fallback_error:
+
+            print("\n❌ FALLBACK FAILED")
+            print(fallback_error)
 
 # ----------------------------
-# RUN ALL CHANNELS
+# RUN
 # ----------------------------
 for channel in channels:
     send_post(channel)
+
+print("\n✅ Script completed")
