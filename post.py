@@ -1,28 +1,30 @@
 import os
-import random
 import requests
-from pathlib import Path
+import random
 
-BUFFER_TOKEN = os.environ["BUFFER_ACCESS_TOKEN"]
-REPO = os.environ["GITHUB_REPOSITORY"]
+API_URL = "https://api.buffer.com"
+API_KEY = os.environ.get("BUFFER_API_KEY")
 
-# ---------------------------------------------------
-# GraphQL helper
-# ---------------------------------------------------
+if not API_KEY:
+    raise Exception("Missing BUFFER_API_KEY env variable")
+
+
 def graphql(query, variables=None):
-    r = requests.post(
-        "https://api.buffer.com",
-        json={"query": query, "variables": variables or {}},
-        headers={
-            "Authorization": f"Bearer {BUFFER_TOKEN}",
-            "Content-Type": "application/json"
-        }
-    )
+    headers = {
+        "Authorization": f"Bearer {API_KEY}",
+        "Content-Type": "application/json",
+    }
 
-    print("\nSTATUS:", r.status_code)
-    print("RESPONSE:", r.text)
+    payload = {
+        "query": query,
+        "variables": variables or {}
+    }
 
-    data = r.json()
+    res = requests.post(API_URL, json=payload, headers=headers)
+
+    print("STATUS:", res.status_code)
+    data = res.json()
+    print("RESPONSE:", data)
 
     if "errors" in data:
         raise Exception(data["errors"])
@@ -30,9 +32,9 @@ def graphql(query, variables=None):
     return data["data"]
 
 
-# ---------------------------------------------------
-# Get organization
-# ---------------------------------------------------
+# -------------------------
+# 1. Get organization
+# -------------------------
 org_query = """
 query {
   account {
@@ -46,14 +48,14 @@ query {
 
 org_data = graphql(org_query)
 org = org_data["account"]["organizations"][0]
-
 org_id = org["id"]
+
 print("\nUsing organization:", org["name"])
 
 
-# ---------------------------------------------------
-# Get channels (FIXED TYPE)
-# ---------------------------------------------------
+# -------------------------
+# 2. Get channels
+# -------------------------
 channels_query = """
 query GetChannels($orgId: OrganizationId!) {
   channels(input: { organizationId: $orgId }) {
@@ -71,39 +73,55 @@ print("\nConnected channels:")
 for c in channels:
     print(c)
 
-
-# ---------------------------------------------------
-# Load captions
-# ---------------------------------------------------
-with open("captions.txt", "r", encoding="utf-8") as f:
-    captions = [l.strip() for l in f if l.strip()]
-
-if not captions:
-    raise Exception("No captions found")
-
-caption = random.choice(captions)
+# pick channels by service
+def pick(service):
+    for c in channels:
+        if c["service"] == service:
+            return c
+    return None
 
 
-# ---------------------------------------------------
-# Load image
-# ---------------------------------------------------
-images = list(Path("images").glob("*"))
+instagram = pick("instagram")
+facebook = pick("facebook")
+tiktok = pick("tiktok")
 
-if not images:
-    raise Exception("No images found")
 
-image = random.choice(images)
+# -------------------------
+# 3. Pick image + caption
+# -------------------------
+images = [
+    "Flux2-Klein_00007_.png",
+    "Flux2-Klein_00066_.png",
+    "Flux2-Klein_00069_.png",
+    "Flux2-Klein_00060_.png",
+]
 
-image_url = f"https://raw.githubusercontent.com/{REPO}/main/images/{image.name}"
+image_file = random.choice(images)
 
-print("\nSelected image:", image.name)
+caption = "Because accidents happen fast. GateGuard alerts you the moment a gate opens."
+
+image_url = f"https://raw.githubusercontent.com/enkisystems/enki-social-poster/main/images/{image_file}"
+
+print("\nSelected image:", image_file)
 print("Selected caption:", caption)
 print("Image URL:", image_url)
 
 
-# ---------------------------------------------------
-# Create Post Mutation
-# ---------------------------------------------------
+# -------------------------
+# 4. Correct asset format (IMPORTANT FIX)
+# -------------------------
+assets = [
+    {
+        "image": {
+            "url": image_url
+        }
+    }
+]
+
+
+# -------------------------
+# 5. Create post mutation (CORRECT SHAPE)
+# -------------------------
 mutation = """
 mutation CreatePost($input: CreatePostInput!) {
   createPost(input: $input) {
@@ -123,37 +141,28 @@ mutation CreatePost($input: CreatePostInput!) {
 """
 
 
-# ---------------------------------------------------
-# Post to all channels
-# ---------------------------------------------------
-for channel in channels:
+def create_post(channel):
+    if not channel:
+        return
 
-    service = channel["service"]
-    print(f"\nPosting to {service}...")
+    print(f"\nPosting to {channel['service']}...")
 
     input_data = {
-        "channelId": channel["id"],
         "text": caption,
+        "channelId": channel["id"],
         "schedulingType": "automatic",
         "mode": "addToQueue",
-        "assets": [
-            {
-                "image": {
-                    "url": image_url
-                }
-            }
-        ]
+        "assets": assets
     }
 
-    # Instagram requirement (DOC-ACCURATE)
-    if service == "instagram":
-        input_data["channelData"] = {
-            "instagram": {
-                "postType": "post"
-            }
-        }
-
     result = graphql(mutation, {"input": input_data})
-
     print("\nPOST RESULT:")
     print(result)
+
+
+# -------------------------
+# 6. POST (IMPORTANT FIX: no Instagram/Facebook type fields)
+# -------------------------
+create_post(instagram)
+create_post(facebook)
+create_post(tiktok)
