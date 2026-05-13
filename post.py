@@ -5,10 +5,11 @@ from pathlib import Path
 
 BUFFER_TOKEN = os.environ["BUFFER_ACCESS_TOKEN"]
 
-# -------------------------------------------------
+# -----------------------------
 # GraphQL helper
-# -------------------------------------------------
+# -----------------------------
 def graphql(query, variables=None):
+
     response = requests.post(
         "https://api.buffer.com",
         json={
@@ -32,9 +33,10 @@ def graphql(query, variables=None):
 
     return data["data"]
 
-# -------------------------------------------------
-# Get organizations
-# -------------------------------------------------
+
+# -----------------------------
+# Get organization
+# -----------------------------
 org_query = """
 query GetOrganizations {
   account {
@@ -53,16 +55,17 @@ organizations = org_data["account"]["organizations"]
 if not organizations:
     raise Exception("No organizations found")
 
-organization = organizations[0]
+organization_id = organizations[0]["id"]
 
-print("Using organization:", organization["name"])
+print("Using organization:", organizations[0]["name"])
 
-# -------------------------------------------------
+
+# -----------------------------
 # Get channels
-# -------------------------------------------------
+# -----------------------------
 channels_query = """
-query GetChannels($orgId: OrganizationId!) {
-  channels(input: { organizationId: $orgId }) {
+query GetChannels($organizationId: OrganizationId!) {
+  channels(input: { organizationId: $organizationId }) {
     id
     name
     service
@@ -73,7 +76,7 @@ query GetChannels($orgId: OrganizationId!) {
 channels_data = graphql(
     channels_query,
     {
-        "orgId": organization["id"]
+        "organizationId": organization_id
     }
 )
 
@@ -82,14 +85,15 @@ channels = channels_data["channels"]
 if not channels:
     raise Exception("No channels found")
 
-print("Connected channels:")
+print("\nConnected channels:")
 
 for c in channels:
     print(c)
 
-# -------------------------------------------------
-# Pick caption
-# -------------------------------------------------
+
+# -----------------------------
+# Load captions
+# -----------------------------
 with open("captions.txt", "r", encoding="utf-8") as f:
     captions = [line.strip() for line in f if line.strip()]
 
@@ -98,9 +102,10 @@ if not captions:
 
 caption = random.choice(captions)
 
-# -------------------------------------------------
-# Pick image
-# -------------------------------------------------
+
+# -----------------------------
+# Load images
+# -----------------------------
 images = list(Path("images").glob("*"))
 
 if not images:
@@ -108,12 +113,10 @@ if not images:
 
 image = random.choice(images)
 
-print("Selected image:", image.name)
-print("Selected caption:", caption)
 
-# -------------------------------------------------
+# -----------------------------
 # GitHub raw image URL
-# -------------------------------------------------
+# -----------------------------
 repo = os.environ["GITHUB_REPOSITORY"]
 
 image_url = (
@@ -121,54 +124,59 @@ image_url = (
     f"{repo}/main/images/{image.name}"
 )
 
+print("\nSelected image:", image.name)
+print("Selected caption:", caption)
 print("Image URL:", image_url)
 
-# -------------------------------------------------
-# Inspect AssetInput fields
-# -------------------------------------------------
+
+# -----------------------------
+# Create post mutation
+# -----------------------------
 mutation = """
-query {
-  __type(name: "AssetInput") {
-    inputFields {
-      name
-      type {
-        name
-        kind
-        ofType {
-          name
-          kind
-        }
+mutation CreatePost($input: CreatePostInput!) {
+
+  createPost(input: $input) {
+
+    ... on PostActionSuccess {
+      post {
+        id
+        text
+        status
+        dueAt
       }
+    }
+
+    ... on MutationError {
+      message
     }
   }
 }
 """
 
-result = graphql(mutation)
 
-print("ASSET INPUT SCHEMA:")
-print(result)
-
-# -------------------------------------------------
-# Post to each channel
-# -------------------------------------------------
+# -----------------------------
+# Post to ALL channels
+# -----------------------------
 for channel in channels:
 
-    print(f"Posting to {channel['service']}...")
+    print(f"\nPosting to {channel['service']}...")
 
     variables = {
         "input": {
+
             "channelId": channel["id"],
 
             "text": caption,
 
             "schedulingType": "automatic",
 
-            "mode": "shareNow",
+            "mode": "addToQueue",
 
             "assets": [
                 {
-                    "source": image_url
+                    "image": {
+                        "url": image_url
+                    }
                 }
             ]
         }
@@ -176,5 +184,5 @@ for channel in channels:
 
     result = graphql(mutation, variables)
 
-    print("POST RESULT:")
+    print("\nPOST RESULT:")
     print(result)
