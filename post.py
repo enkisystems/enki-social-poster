@@ -134,22 +134,29 @@ print("Selected caption:", caption)
 # Create post
 # -----------------------------
 mutation = """
-mutation CreatePost($input: CreatePostInput!) {
-  createPost(input: $input) {
+query {
+  __type(name: "CreatePostInput") {
+    inputFields {
+      name
+      type {
+        name
+        kind
 
-    ... on PostActionSuccess {
-      post {
-        id
-        status
+        ofType {
+          name
+          kind
+        }
       }
-    }
-
-    ... on MutationError {
-      message
     }
   }
 }
 """
+
+variables = {}
+
+result = graphql(mutation, variables)
+
+print(result)
 
 # Try Instagram ONLY first
 instagram_channel = next(
