@@ -6,9 +6,9 @@ from pathlib import Path
 BUFFER_TOKEN = os.environ["BUFFER_ACCESS_TOKEN"]
 REPO = os.environ["GITHUB_REPOSITORY"]
 
-# -----------------------------
+# ---------------------------------------------------
 # GraphQL helper
-# -----------------------------
+# ---------------------------------------------------
 def graphql(query, variables=None):
     r = requests.post(
         "https://api.buffer.com",
@@ -19,7 +19,7 @@ def graphql(query, variables=None):
         }
     )
 
-    print("STATUS:", r.status_code)
+    print("\nSTATUS:", r.status_code)
     print("RESPONSE:", r.text)
 
     data = r.json()
@@ -30,9 +30,9 @@ def graphql(query, variables=None):
     return data["data"]
 
 
-# -----------------------------
+# ---------------------------------------------------
 # Get organization
-# -----------------------------
+# ---------------------------------------------------
 org_query = """
 query {
   account {
@@ -46,16 +46,16 @@ query {
 
 org_data = graphql(org_query)
 org = org_data["account"]["organizations"][0]
-org_id = org["id"]
 
+org_id = org["id"]
 print("\nUsing organization:", org["name"])
 
 
-# -----------------------------
-# Get channels (DOC-CORRECT)
-# -----------------------------
+# ---------------------------------------------------
+# Get channels (FIXED TYPE)
+# ---------------------------------------------------
 channels_query = """
-query GetChannels($orgId: ID!) {
+query GetChannels($orgId: OrganizationId!) {
   channels(input: { organizationId: $orgId }) {
     id
     name
@@ -72,19 +72,26 @@ for c in channels:
     print(c)
 
 
-# -----------------------------
-# Load caption
-# -----------------------------
+# ---------------------------------------------------
+# Load captions
+# ---------------------------------------------------
 with open("captions.txt", "r", encoding="utf-8") as f:
     captions = [l.strip() for l in f if l.strip()]
+
+if not captions:
+    raise Exception("No captions found")
 
 caption = random.choice(captions)
 
 
-# -----------------------------
+# ---------------------------------------------------
 # Load image
-# -----------------------------
+# ---------------------------------------------------
 images = list(Path("images").glob("*"))
+
+if not images:
+    raise Exception("No images found")
+
 image = random.choice(images)
 
 image_url = f"https://raw.githubusercontent.com/{REPO}/main/images/{image.name}"
@@ -94,9 +101,9 @@ print("Selected caption:", caption)
 print("Image URL:", image_url)
 
 
-# -----------------------------
-# Create post mutation (DOC EXACT)
-# -----------------------------
+# ---------------------------------------------------
+# Create Post Mutation
+# ---------------------------------------------------
 mutation = """
 mutation CreatePost($input: CreatePostInput!) {
   createPost(input: $input) {
@@ -116,12 +123,12 @@ mutation CreatePost($input: CreatePostInput!) {
 """
 
 
-# -----------------------------
-# Post each channel
-# -----------------------------
+# ---------------------------------------------------
+# Post to all channels
+# ---------------------------------------------------
 for channel in channels:
-    service = channel["service"]
 
+    service = channel["service"]
     print(f"\nPosting to {service}...")
 
     input_data = {
@@ -138,7 +145,7 @@ for channel in channels:
         ]
     }
 
-    # IMPORTANT: only Instagram needs this
+    # Instagram requirement (DOC-ACCURATE)
     if service == "instagram":
         input_data["channelData"] = {
             "instagram": {
