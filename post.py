@@ -135,13 +135,12 @@ print("Selected caption:", caption)
 # -----------------------------
 mutation = """
 query {
-  __type(name: "CreatePostInput") {
+  __type(name: "PostInputAsset") {
     inputFields {
       name
       type {
         name
         kind
-
         ofType {
           name
           kind
