@@ -5,7 +5,7 @@ import requests
 API_URL = "https://api.buffer.com/graphql"
 
 # ----------------------------
-# AUTH
+# AUTH (supports both env names)
 # ----------------------------
 TOKEN = os.getenv("BUFFER_ACCESS_TOKEN") or os.getenv("BUFFER_API_KEY")
 
@@ -28,9 +28,10 @@ def graphql(query, variables=None):
         json={"query": query, "variables": variables or {}},
         headers=HEADERS
     )
+
     data = res.json()
 
-    print("STATUS:", res.status_code)
+    print("\nSTATUS:", res.status_code)
     print("RESPONSE:", data)
 
     if "errors" in data:
@@ -39,7 +40,7 @@ def graphql(query, variables=None):
     return data["data"]
 
 # ----------------------------
-# GET ORG
+# GET ORGANIZATION
 # ----------------------------
 org_query = """
 query {
@@ -82,28 +83,25 @@ for c in channels:
 IMAGE_FOLDER = "./images"
 
 images = [
-    os.path.join(IMAGE_FOLDER, f)
-    for f in os.listdir(IMAGE_FOLDER)
+    f for f in os.listdir(IMAGE_FOLDER)
     if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))
 ]
 
 if not images:
-    raise Exception("No images found in ./images folder")
+    raise Exception("No images found in ./images")
 
-image_path = random.choice(images)
+image_file = random.choice(images)
+image_path = os.path.join(IMAGE_FOLDER, image_file)
 
-# GitHub raw pattern (adjust if needed)
 IMAGE_URL = (
-    "https://raw.githubusercontent.com/enkisystems/enki-social-poster/main/"
-    + image_path.replace("\\", "/")
+    "https://raw.githubusercontent.com/enkisystems/enki-social-poster/main/images/"
+    + image_file
 )
 
 # ----------------------------
 # RANDOM CAPTION
 # ----------------------------
-CAPTION_FILE = "captions.txt"
-
-with open(CAPTION_FILE, "r", encoding="utf-8") as f:
+with open("captions.txt", "r", encoding="utf-8") as f:
     captions = [line.strip() for line in f if line.strip()]
 
 if not captions:
@@ -111,12 +109,12 @@ if not captions:
 
 caption = random.choice(captions)
 
-print("\nSelected image:", os.path.basename(image_path))
+print("\nSelected image:", image_file)
 print("Selected caption:", caption)
 print("Image URL:", IMAGE_URL)
 
 # ----------------------------
-# CREATE POST MUTATION
+# GRAPHQL MUTATION
 # ----------------------------
 mutation = """
 mutation CreatePost($input: CreatePostInput!) {
@@ -136,9 +134,11 @@ mutation CreatePost($input: CreatePostInput!) {
 """
 
 # ----------------------------
-# POST EACH CHANNEL SAFELY
+# BUILD PLATFORM PAYLOAD
 # ----------------------------
-def send_post(channel):
+def build_payload(channel):
+    service = channel["service"]
+
     payload = {
         "channelId": channel["id"],
         "text": caption,
@@ -153,6 +153,18 @@ def send_post(channel):
         ]
     }
 
+    # REQUIRED FIX: Instagram + Facebook need type
+    if service in ["instagram", "facebook"]:
+        payload["type"] = "story"   # safest working option
+
+    return payload
+
+# ----------------------------
+# SEND POST
+# ----------------------------
+def send_post(channel):
+    payload = build_payload(channel)
+
     print(f"\nPosting to {channel['service']} ({channel['name']})...")
 
     try:
@@ -163,6 +175,8 @@ def send_post(channel):
         print(f"\n❌ FAILED on {channel['service']}")
         print(e)
 
-
+# ----------------------------
+# RUN ALL CHANNELS
+# ----------------------------
 for channel in channels:
     send_post(channel)
