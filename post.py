@@ -133,12 +133,15 @@ print("Selected caption:", caption)
 mutation = """
 mutation CreatePost($input: CreatePostInput!) {
   createPost(input: $input) {
-    post {
-      id
-      status
+
+    ... on PostActionSuccess {
+      post {
+        id
+        status
+      }
     }
 
-    errors {
+    ... on MutationError {
       message
     }
   }
