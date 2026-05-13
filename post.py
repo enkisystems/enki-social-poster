@@ -1,46 +1,36 @@
 import os
-import requests
 import random
-import sys
+import requests
 
-API_URL = "https://api.buffer.com"
+API_URL = "https://api.buffer.com/graphql"
 
+# ----------------------------
+# AUTH
+# ----------------------------
+TOKEN = os.getenv("BUFFER_ACCESS_TOKEN") or os.getenv("BUFFER_API_KEY")
 
-# -------------------------
-# FIXED ENV HANDLING (IMPORTANT)
-# -------------------------
-API_KEY = (
-    os.getenv("BUFFER_API_KEY")
-    or os.getenv("BUFFER_ACCESS_TOKEN")
-)
+if not TOKEN:
+    print("❌ ERROR: Missing BUFFER_ACCESS_TOKEN / BUFFER_API_KEY")
+    print("Available env vars:", list(os.environ.keys()))
+    exit(1)
 
-if not API_KEY:
-    print("\n❌ Missing Buffer API key")
-    print("Looked for: BUFFER_API_KEY OR BUFFER_ACCESS_TOKEN")
-    print("\nAvailable env vars containing 'BUFFER':")
-    print([k for k in os.environ.keys() if "BUFFER" in k])
-    sys.exit(1)
+HEADERS = {
+    "Authorization": f"Bearer {TOKEN}",
+    "Content-Type": "application/json"
+}
 
-
-# -------------------------
+# ----------------------------
 # GRAPHQL HELPER
-# -------------------------
+# ----------------------------
 def graphql(query, variables=None):
-    headers = {
-        "Authorization": f"Bearer {API_KEY}",
-        "Content-Type": "application/json",
-    }
-
-    payload = {
-        "query": query,
-        "variables": variables or {}
-    }
-
-    res = requests.post(API_URL, json=payload, headers=headers)
-
-    print("\nSTATUS:", res.status_code)
-
+    res = requests.post(
+        API_URL,
+        json={"query": query, "variables": variables or {}},
+        headers=HEADERS
+    )
     data = res.json()
+
+    print("STATUS:", res.status_code)
     print("RESPONSE:", data)
 
     if "errors" in data:
@@ -48,10 +38,9 @@ def graphql(query, variables=None):
 
     return data["data"]
 
-
-# -------------------------
-# GET ORGANIZATION
-# -------------------------
+# ----------------------------
+# GET ORG
+# ----------------------------
 org_query = """
 query {
   account {
@@ -63,18 +52,16 @@ query {
 }
 """
 
-org_data = graphql(org_query)
-org = org_data["account"]["organizations"][0]
-org_id = org["id"]
+orgs = graphql(org_query)["account"]["organizations"]
+org_id = orgs[0]["id"]
 
-print("\nUsing organization:", org["name"])
+print("\nUsing organization:", orgs[0]["name"])
 
-
-# -------------------------
+# ----------------------------
 # GET CHANNELS
-# -------------------------
+# ----------------------------
 channels_query = """
-query GetChannels($orgId: OrganizationId!) {
+query ($orgId: OrganizationId!) {
   channels(input: { organizationId: $orgId }) {
     id
     name
@@ -83,78 +70,54 @@ query GetChannels($orgId: OrganizationId!) {
 }
 """
 
-channels_data = graphql(channels_query, {"orgId": org_id})
-channels = channels_data["channels"]
+channels = graphql(channels_query, {"orgId": org_id})["channels"]
 
 print("\nConnected channels:")
 for c in channels:
     print(c)
 
+# ----------------------------
+# RANDOM IMAGE FROM FOLDER
+# ----------------------------
+IMAGE_FOLDER = "./images"
 
-def get_channel(service):
-    return next((c for c in channels if c["service"] == service), None)
-
-
-instagram = get_channel("instagram")
-facebook = get_channel("facebook")
-tiktok = get_channel("tiktok")
-
-
-# -------------------------
-# RANDOM IMAGES (LOCAL FOLDER)
-# -------------------------
 images = [
-    f for f in os.listdir("images")
-    if f.endswith(".png")
+    os.path.join(IMAGE_FOLDER, f)
+    for f in os.listdir(IMAGE_FOLDER)
+    if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))
 ]
 
-image_file = random.choice(images)
+if not images:
+    raise Exception("No images found in ./images folder")
 
+image_path = random.choice(images)
 
-# -------------------------
-# RANDOM CAPTIONS
-# -------------------------
-captions = [
-    "Because accidents happen fast. GateGuard alerts you the moment a gate opens.",
-    "Know the moment your gate is opened.",
-    "Smart gate alerts for families and pet owners.",
-    "Peace of mind when it matters most — instant gate alerts.",
-    "Never wonder if the gate was left open again.",
-    "Because fur babies are family too — stay alerted instantly.",
-    "Real-time gate alerts straight to your phone and watch.",
-]
+# GitHub raw pattern (adjust if needed)
+IMAGE_URL = (
+    "https://raw.githubusercontent.com/enkisystems/enki-social-poster/main/"
+    + image_path.replace("\\", "/")
+)
+
+# ----------------------------
+# RANDOM CAPTION
+# ----------------------------
+CAPTION_FILE = "captions.txt"
+
+with open(CAPTION_FILE, "r", encoding="utf-8") as f:
+    captions = [line.strip() for line in f if line.strip()]
+
+if not captions:
+    raise Exception("No captions found in captions.txt")
 
 caption = random.choice(captions)
 
-
-# -------------------------
-# IMAGE URL (GITHUB RAW)
-# -------------------------
-image_url = (
-    "https://raw.githubusercontent.com/enkisystems/enki-social-poster/main/images/"
-    + image_file
-)
-
-print("\nSelected image:", image_file)
+print("\nSelected image:", os.path.basename(image_path))
 print("Selected caption:", caption)
-print("Image URL:", image_url)
+print("Image URL:", IMAGE_URL)
 
-
-# -------------------------
-# BUFFER ASSETS (CORRECT FORMAT)
-# -------------------------
-assets = [
-    {
-        "image": {
-            "url": image_url
-        }
-    }
-]
-
-
-# -------------------------
-# MUTATION
-# -------------------------
+# ----------------------------
+# CREATE POST MUTATION
+# ----------------------------
 mutation = """
 mutation CreatePost($input: CreatePostInput!) {
   createPost(input: $input) {
@@ -162,7 +125,6 @@ mutation CreatePost($input: CreatePostInput!) {
       post {
         id
         text
-        status
         dueAt
       }
     }
@@ -173,31 +135,34 @@ mutation CreatePost($input: CreatePostInput!) {
 }
 """
 
-
-def create_post(channel):
-    if not channel:
-        print("\n⚠️ Skipping missing channel")
-        return
-
-    print(f"\nPosting to {channel['service']}...")
-
-    input_data = {
-        "text": caption,
+# ----------------------------
+# POST EACH CHANNEL SAFELY
+# ----------------------------
+def send_post(channel):
+    payload = {
         "channelId": channel["id"],
+        "text": caption,
         "schedulingType": "automatic",
         "mode": "addToQueue",
-        "assets": assets
+        "assets": [
+            {
+                "image": {
+                    "url": IMAGE_URL
+                }
+            }
+        ]
     }
 
-    result = graphql(mutation, {"input": input_data})
+    print(f"\nPosting to {channel['service']} ({channel['name']})...")
 
-    print("\nPOST RESULT:")
-    print(result)
+    try:
+        result = graphql(mutation, {"input": payload})
+        print("\nPOST RESULT:")
+        print(result)
+    except Exception as e:
+        print(f"\n❌ FAILED on {channel['service']}")
+        print(e)
 
 
-# -------------------------
-# RUN
-# -------------------------
-create_post(instagram)
-create_post(facebook)
-create_post(tiktok)
+for channel in channels:
+    send_post(channel)
