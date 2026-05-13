@@ -62,7 +62,7 @@ print("Using organization:", organizations[0]["name"])
 # Get channels
 # -----------------------------
 channels_query = """
-query GetChannels($organizationId: ID!) {
+query GetChannels($organizationId: String!) {
   organization(id: $organizationId) {
     channels {
       id
