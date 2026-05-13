@@ -62,25 +62,26 @@ print("Using organization:", organizations[0]["name"])
 # Get channels
 # -----------------------------
 channels_query = """
-query GetChannels($organizationId: String!) {
-  organization(id: $organizationId) {
-    channels {
+query GetChannels {
+  account {
+    organizations {
       id
       name
-      service
+      channels {
+        id
+        name
+        service
+      }
     }
   }
 }
 """
 
-channels_data = graphql(
-    channels_query,
-    {
-        "organizationId": organization_id
-    }
-)
+channels_data = graphql(channels_query)
 
-channels = channels_data["organization"]["channels"]
+organizations = channels_data["account"]["organizations"]
+
+channels = organizations[0]["channels"]
 
 if not channels:
     raise Exception("No channels found")
