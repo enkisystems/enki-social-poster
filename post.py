@@ -150,14 +150,14 @@ mutation CreatePost($input: CreatePostInput!) {
 
 variables = {
     "input": {
-        "channelIds": channel_ids,
-        "content": {
-            "text": caption,
-            "media": [
-                {
-                    "url": image_url
-                }
-            ]
+        "channelId": channel_ids[0],
+        "mode": "QUEUE",
+        "schedulingType": "QUEUE_NEXT",
+
+        "text": caption,
+
+        "media": {
+            "photo": image_url
         }
     }
 }
