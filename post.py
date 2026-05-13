@@ -6,52 +6,91 @@ from pathlib import Path
 BUFFER_TOKEN = os.environ["BUFFER_ACCESS_TOKEN"]
 
 # -----------------------------
-# Buffer API helpers
+# GraphQL helper
 # -----------------------------
-def buffer_get(url):
-    response = requests.get(
-        url,
-        params={
-            "access_token": BUFFER_TOKEN
+def graphql(query, variables=None):
+    response = requests.post(
+        "https://api.buffer.com",
+        json={
+            "query": query,
+            "variables": variables or {}
+        },
+        headers={
+            "Authorization": f"Bearer {BUFFER_TOKEN}",
+            "Content-Type": "application/json"
         }
     )
 
-    print("GET STATUS:", response.status_code)
-    print("GET RESPONSE:", response.text)
+    print("STATUS:", response.status_code)
+    print("RESPONSE:", response.text)
 
     response.raise_for_status()
 
-    return response.json()
+    data = response.json()
 
-def buffer_post(url, data):
-    data["access_token"] = BUFFER_TOKEN
+    if "errors" in data:
+        raise Exception(data["errors"])
 
-    response = requests.post(url, data=data)
-
-    print("POST STATUS:", response.status_code)
-    print("POST RESPONSE:", response.text)
-
-    response.raise_for_status()
-
-    return response.json()
+    return data["data"]
 
 # -----------------------------
-# Get profiles
+# Get organization
 # -----------------------------
-profiles = buffer_get(
-    "https://api.bufferapp.com/1/profiles.json"
+org_query = """
+query GetOrganizations {
+  account {
+    organizations {
+      id
+      name
+    }
+  }
+}
+"""
+
+org_data = graphql(org_query)
+
+organizations = org_data["account"]["organizations"]
+
+if not organizations:
+    raise Exception("No organizations found")
+
+organization_id = organizations[0]["id"]
+
+print("Using organization:", organizations[0]["name"])
+
+# -----------------------------
+# Get channels
+# -----------------------------
+channels_query = """
+query GetChannels($organizationId: ID!) {
+  organization(id: $organizationId) {
+    channels {
+      id
+      name
+      service
+    }
+  }
+}
+"""
+
+channels_data = graphql(
+    channels_query,
+    {
+        "organizationId": organization_id
+    }
 )
 
-# Safety validation
-if not isinstance(profiles, list):
-    raise Exception(f"Unexpected profiles response: {profiles}")
+channels = channels_data["organization"]["channels"]
 
-print("Connected profiles:")
+if not channels:
+    raise Exception("No channels found")
 
-for p in profiles:
-    print(p)
+print("Connected channels:")
 
-profile_ids = [p["id"] for p in profiles]
+for c in channels:
+    print(c)
+
+channel_ids = [c["id"] for c in channels]
 
 # -----------------------------
 # Load captions
@@ -75,7 +114,7 @@ if not images:
 image = random.choice(images)
 
 # -----------------------------
-# GitHub image URL
+# GitHub raw image URL
 # -----------------------------
 repo = os.environ["GITHUB_REPOSITORY"]
 
@@ -90,14 +129,36 @@ print("Selected caption:", caption)
 # -----------------------------
 # Create post
 # -----------------------------
-response = buffer_post(
-    "https://api.bufferapp.com/1/updates/create.json",
-    {
-        "text": caption,
-        "profile_ids[]": profile_ids,
-        "media[photo]": image_url
+mutation = """
+mutation CreatePost($input: CreatePostInput!) {
+  createPost(input: $input) {
+    ... on Post {
+      id
+      status
     }
-)
 
-print("Final response:")
-print(response)
+    ... on MutationError {
+      message
+    }
+  }
+}
+"""
+
+variables = {
+    "input": {
+        "channelIds": channel_ids,
+        "content": {
+            "text": caption,
+            "media": [
+                {
+                    "url": image_url
+                }
+            ]
+        }
+    }
+}
+
+post_result = graphql(mutation, variables)
+
+print("POST RESULT:")
+print(post_result)
