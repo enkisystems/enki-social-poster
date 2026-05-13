@@ -131,22 +131,22 @@ print("Selected caption:", caption)
 # Create post
 # -----------------------------
 mutation = """
-mutation CreatePost($input: CreatePostInput!) {
-  createPost(input: $input) {
-
-    ... on PostActionSuccess {
-      post {
-        id
-        status
-      }
+query {
+  __type(name: "SchedulingType") {
+    enumValues {
+      name
     }
+  }
 
-    ... on MutationError {
-      message
+  shareMode: __type(name: "ShareMode") {
+    enumValues {
+      name
     }
   }
 }
 """
+
+variables = {}
 
 variables = {
     "input": {
@@ -160,7 +160,9 @@ variables = {
     }
 }
 
-post_result = graphql(mutation, variables)
+result = graphql(mutation, variables)
+
+print(result)
 
 print("POST RESULT:")
 print(post_result)
