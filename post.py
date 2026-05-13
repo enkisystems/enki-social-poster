@@ -8,13 +8,10 @@ BUFFER_TOKEN = os.environ["BUFFER_ACCESS_TOKEN"]
 # -----------------------------
 # GraphQL helper
 # -----------------------------
-def graphql(query, variables=None):
+def graphql(query):
     response = requests.post(
         "https://api.buffer.com",
-        json={
-            "query": query,
-            "variables": variables or {}
-        },
+        json={"query": query},
         headers={
             "Authorization": f"Bearer {BUFFER_TOKEN}",
             "Content-Type": "application/json"
@@ -24,8 +21,6 @@ def graphql(query, variables=None):
     print("STATUS:", response.status_code)
     print("RESPONSE:", response.text)
 
-    response.raise_for_status()
-
     data = response.json()
 
     if "errors" in data:
@@ -34,35 +29,10 @@ def graphql(query, variables=None):
     return data["data"]
 
 # -----------------------------
-# Get organization
+# Get organizations/channels
 # -----------------------------
-org_query = """
-query GetOrganizations {
-  account {
-    organizations {
-      id
-      name
-    }
-  }
-}
-"""
-
-org_data = graphql(org_query)
-
-organizations = org_data["account"]["organizations"]
-
-if not organizations:
-    raise Exception("No organizations found")
-
-organization_id = organizations[0]["id"]
-
-print("Using organization:", organizations[0]["name"])
-
-# -----------------------------
-# Get channels
-# -----------------------------
-channels_query = """
-query GetChannels {
+query = """
+query {
   account {
     organizations {
       id
@@ -78,14 +48,13 @@ query GetChannels {
 }
 """
 
-channels_data = graphql(channels_query)
+data = graphql(query)
 
-organizations = channels_data["account"]["organizations"]
+organization = data["account"]["organizations"][0]
 
-channels = organizations[0]["channels"]
+print("Using organization:", organization["name"])
 
-if not channels:
-    raise Exception("No channels found")
+channels = organization["channels"]
 
 print("Connected channels:")
 
@@ -93,29 +62,29 @@ for c in channels:
     print(c)
 
 # -----------------------------
-# Load captions
+# Instagram channel
+# -----------------------------
+instagram_channel = next(
+    c for c in channels if c["service"] == "instagram"
+)
+
+channel_id = instagram_channel["id"]
+
+# -----------------------------
+# Random caption
 # -----------------------------
 with open("captions.txt", "r", encoding="utf-8") as f:
     captions = [line.strip() for line in f if line.strip()]
 
-if not captions:
-    raise Exception("No captions found")
-
 caption = random.choice(captions)
 
 # -----------------------------
-# Load images
+# Random image
 # -----------------------------
 images = list(Path("images").glob("*"))
 
-if not images:
-    raise Exception("No images found")
-
 image = random.choice(images)
 
-# -----------------------------
-# GitHub raw image URL
-# -----------------------------
 repo = os.environ["GITHUB_REPOSITORY"]
 
 image_url = (
@@ -127,58 +96,40 @@ print("Selected image:", image.name)
 print("Selected caption:", caption)
 
 # -----------------------------
-# Create post mutation
+# CREATE POST
 # -----------------------------
-mutation = """
-mutation CreatePost($input: CreatePostInput!) {
-  createPost(input: $input) {
+mutation = f'''
+mutation {{
+  createPost(
+    input: {{
+      channelId: "{channel_id}"
+      text: "{caption}"
+      schedulingType: automatic
+      mode: shareNow
 
-    ... on PostActionSuccess {
-      post {
+      assets: [
+        {{
+          sourceUrl: "{image_url}"
+        }}
+      ]
+    }}
+  ) {{
+
+    ... on PostActionSuccess {{
+      post {{
         id
         status
-      }
-    }
+      }}
+    }}
 
-    ... on MutationError {
+    ... on MutationError {{
       message
-    }
-  }
-}
-"""
+    }}
+  }}
+}}
+'''
 
-# -----------------------------
-# Instagram channel
-# -----------------------------
-instagram_channel = next(
-    c for c in channels if c["service"] == "instagram"
-)
-
-# -----------------------------
-# Post variables
-# -----------------------------
-variables = {
-    "input": {
-        "channelId": instagram_channel["id"],
-
-        "mode": "shareNow",
-
-        "schedulingType": "automatic",
-
-        "text": caption,
-
-        "assets": [
-            {
-                "url": image_url
-            }
-        ]
-    }
-}
-
-# -----------------------------
-# Create post
-# -----------------------------
-post_result = graphql(mutation, variables)
+post_result = graphql(mutation)
 
 print("POST RESULT:")
 print(post_result)
