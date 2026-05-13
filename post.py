@@ -5,15 +5,20 @@ import sys
 
 API_URL = "https://api.buffer.com"
 
+
 # -------------------------
-# ENV SAFETY CHECK
+# FIXED ENV HANDLING (IMPORTANT)
 # -------------------------
-API_KEY = os.getenv("BUFFER_API_KEY")
+API_KEY = (
+    os.getenv("BUFFER_API_KEY")
+    or os.getenv("BUFFER_ACCESS_TOKEN")
+)
 
 if not API_KEY:
-    print("\n❌ ERROR: Missing BUFFER_API_KEY environment variable\n")
-    print("Available environment variables:")
-    print(list(os.environ.keys()))
+    print("\n❌ Missing Buffer API key")
+    print("Looked for: BUFFER_API_KEY OR BUFFER_ACCESS_TOKEN")
+    print("\nAvailable env vars containing 'BUFFER':")
+    print([k for k in os.environ.keys() if "BUFFER" in k])
     sys.exit(1)
 
 
@@ -35,12 +40,7 @@ def graphql(query, variables=None):
 
     print("\nSTATUS:", res.status_code)
 
-    try:
-        data = res.json()
-    except Exception:
-        print("RAW RESPONSE:", res.text)
-        raise
-
+    data = res.json()
     print("RESPONSE:", data)
 
     if "errors" in data:
@@ -50,7 +50,7 @@ def graphql(query, variables=None):
 
 
 # -------------------------
-# 1. GET ORGANIZATION
+# GET ORGANIZATION
 # -------------------------
 org_query = """
 query {
@@ -64,7 +64,6 @@ query {
 """
 
 org_data = graphql(org_query)
-
 org = org_data["account"]["organizations"][0]
 org_id = org["id"]
 
@@ -72,7 +71,7 @@ print("\nUsing organization:", org["name"])
 
 
 # -------------------------
-# 2. GET CHANNELS
+# GET CHANNELS
 # -------------------------
 channels_query = """
 query GetChannels($orgId: OrganizationId!) {
@@ -102,20 +101,35 @@ tiktok = get_channel("tiktok")
 
 
 # -------------------------
-# 3. CONTENT
+# RANDOM IMAGES (LOCAL FOLDER)
 # -------------------------
 images = [
-    "Flux2-Klein_00007_.png",
-    "Flux2-Klein_00060_.png",
-    "Flux2-Klein_00066_.png",
-    "Flux2-Klein_00069_.png",
-    "Flux2-Klein_00182_.png",
+    f for f in os.listdir("images")
+    if f.endswith(".png")
 ]
 
 image_file = random.choice(images)
 
-caption = "Because accidents happen fast. GateGuard alerts you the moment a gate opens."
 
+# -------------------------
+# RANDOM CAPTIONS
+# -------------------------
+captions = [
+    "Because accidents happen fast. GateGuard alerts you the moment a gate opens.",
+    "Know the moment your gate is opened.",
+    "Smart gate alerts for families and pet owners.",
+    "Peace of mind when it matters most — instant gate alerts.",
+    "Never wonder if the gate was left open again.",
+    "Because fur babies are family too — stay alerted instantly.",
+    "Real-time gate alerts straight to your phone and watch.",
+]
+
+caption = random.choice(captions)
+
+
+# -------------------------
+# IMAGE URL (GITHUB RAW)
+# -------------------------
 image_url = (
     "https://raw.githubusercontent.com/enkisystems/enki-social-poster/main/images/"
     + image_file
@@ -127,7 +141,7 @@ print("Image URL:", image_url)
 
 
 # -------------------------
-# 4. CORRECT BUFFER ASSET FORMAT
+# BUFFER ASSETS (CORRECT FORMAT)
 # -------------------------
 assets = [
     {
@@ -139,7 +153,7 @@ assets = [
 
 
 # -------------------------
-# 5. MUTATION (CORRECT)
+# MUTATION
 # -------------------------
 mutation = """
 mutation CreatePost($input: CreatePostInput!) {
@@ -182,7 +196,7 @@ def create_post(channel):
 
 
 # -------------------------
-# 6. POST LOGIC
+# RUN
 # -------------------------
 create_post(instagram)
 create_post(facebook)
