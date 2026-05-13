@@ -67,6 +67,7 @@ query GetChannels {
     organizations {
       id
       name
+
       channels {
         id
         name
@@ -90,8 +91,6 @@ print("Connected channels:")
 
 for c in channels:
     print(c)
-
-channel_ids = [c["id"] for c in channels]
 
 # -----------------------------
 # Load captions
@@ -128,40 +127,36 @@ print("Selected image:", image.name)
 print("Selected caption:", caption)
 
 # -----------------------------
-# Create post
-# -----------------------------
-# -----------------------------
-# Create post
+# Create post mutation
 # -----------------------------
 mutation = """
-query {
-  __type(name: "PostInputAsset") {
-    inputFields {
-      name
-      type {
-        name
-        kind
-        ofType {
-          name
-          kind
-        }
+mutation CreatePost($input: CreatePostInput!) {
+  createPost(input: $input) {
+
+    ... on PostActionSuccess {
+      post {
+        id
+        status
       }
+    }
+
+    ... on MutationError {
+      message
     }
   }
 }
 """
 
-variables = {}
-
-result = graphql(mutation, variables)
-
-print(result)
-
-# Try Instagram ONLY first
+# -----------------------------
+# Instagram channel
+# -----------------------------
 instagram_channel = next(
     c for c in channels if c["service"] == "instagram"
 )
 
+# -----------------------------
+# Post variables
+# -----------------------------
 variables = {
     "input": {
         "channelId": instagram_channel["id"],
@@ -172,12 +167,17 @@ variables = {
 
         "text": caption,
 
-        "mediaInput": {
-            "photo": image_url
-        }
+        "assets": [
+            {
+                "url": image_url
+            }
+        ]
     }
 }
 
+# -----------------------------
+# Create post
+# -----------------------------
 post_result = graphql(mutation, variables)
 
 print("POST RESULT:")
