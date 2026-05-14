@@ -1,12 +1,35 @@
 import os
 import random
 import requests
+import json
+from datetime import datetime, timedelta, timezone
+
+# =========================================================
+# CONFIG
+# =========================================================
 
 API_URL = "https://api.buffer.com/graphql"
 
-# ----------------------------
+IMAGE_FOLDER = "./images"
+CAPTION_FILE = "captions.txt"
+
+# IMPORTANT:
+# Use a PROPER CDN if possible.
+# GitHub raw URLs are flaky with Meta.
+#
+# Example:
+# https://cdn.yoursite.com/dogs/
+#
+# TEMPORARY:
+BASE_IMAGE_URL = (
+    "https://raw.githubusercontent.com/"
+    "enkisystems/enki-social-poster/main/images/"
+)
+
+# =========================================================
 # AUTH
-# ----------------------------
+# =========================================================
+
 TOKEN = os.getenv("BUFFER_ACCESS_TOKEN") or os.getenv("BUFFER_API_KEY")
 
 if not TOKEN:
@@ -20,10 +43,12 @@ HEADERS = {
     "Content-Type": "application/json"
 }
 
-# ----------------------------
+# =========================================================
 # GRAPHQL HELPER
-# ----------------------------
+# =========================================================
+
 def graphql(query, variables=None):
+
     response = requests.post(
         API_URL,
         json={
@@ -33,19 +58,27 @@ def graphql(query, variables=None):
         headers=HEADERS
     )
 
-    data = response.json()
+    print("\n===================================")
+    print("STATUS:", response.status_code)
 
-    print("\nSTATUS:", response.status_code)
-    print("RESPONSE:", data)
+    try:
+        data = response.json()
+    except Exception:
+        print("❌ Failed to decode JSON")
+        print(response.text)
+        raise
+
+    print(json.dumps(data, indent=2))
 
     if "errors" in data:
         raise Exception(data["errors"])
 
     return data["data"]
 
-# ----------------------------
+# =========================================================
 # GET ORGANIZATION
-# ----------------------------
+# =========================================================
+
 org_query = """
 query {
   account {
@@ -66,11 +99,12 @@ if not orgs:
 
 org_id = orgs[0]["id"]
 
-print("\nUsing organization:", orgs[0]["name"])
+print("\n✅ Using organization:", orgs[0]["name"])
 
-# ----------------------------
+# =========================================================
 # GET CHANNELS
-# ----------------------------
+# =========================================================
+
 channels_query = """
 query ($orgId: OrganizationId!) {
   channels(input: { organizationId: $orgId }) {
@@ -88,15 +122,34 @@ channels_data = graphql(
 
 channels = channels_data["channels"]
 
-print("\nConnected channels:")
+print("\n✅ Connected channels:")
 
 for channel in channels:
     print(channel)
 
-# ----------------------------
+# =========================================================
+# SEPARATE CHANNELS
+# =========================================================
+
+tiktok_channels = []
+meta_channels = []
+
+for channel in channels:
+
+    service = channel["service"].lower()
+
+    if service == "tiktok":
+        tiktok_channels.append(channel)
+
+    elif service in ["instagram", "facebook"]:
+        meta_channels.append(channel)
+
+print("\nTikTok channels:", len(tiktok_channels))
+print("Meta channels:", len(meta_channels))
+
+# =========================================================
 # RANDOM IMAGE
-# ----------------------------
-IMAGE_FOLDER = "./images"
+# =========================================================
 
 all_images = [
     file for file in os.listdir(IMAGE_FOLDER)
@@ -113,18 +166,14 @@ if not all_images:
 
 selected_image = random.choice(all_images)
 
-IMAGE_URL = (
-    "https://raw.githubusercontent.com/"
-    "enkisystems/enki-social-poster/main/images/"
-    + selected_image
-)
+IMAGE_URL = BASE_IMAGE_URL + selected_image
 
-# ----------------------------
+# =========================================================
 # RANDOM CAPTION
-# ----------------------------
-CAPTION_FILE = "captions.txt"
+# =========================================================
 
 with open(CAPTION_FILE, "r", encoding="utf-8") as file:
+
     captions = [
         line.strip()
         for line in file.readlines()
@@ -136,13 +185,45 @@ if not captions:
 
 selected_caption = random.choice(captions)
 
-print("\nSelected image:", selected_image)
-print("Selected caption:", selected_caption)
-print("Image URL:", IMAGE_URL)
+print("\n✅ Selected image:", selected_image)
+print("✅ Selected caption:", selected_caption)
+print("✅ Image URL:", IMAGE_URL)
 
-# ----------------------------
+# =========================================================
+# SCHEDULE TIME
+# =========================================================
+#
+# Schedule:
+# 22:00 UTC
+# +/- 24 min jitter
+#
+
+now = datetime.now(timezone.utc)
+
+scheduled = now.replace(
+    hour=22,
+    minute=0,
+    second=0,
+    microsecond=0
+)
+
+# If today's slot already passed -> tomorrow
+if scheduled <= now:
+    scheduled += timedelta(days=1)
+
+# Jitter between -24 and +24 minutes
+jitter_minutes = random.randint(-24, 24)
+
+scheduled += timedelta(minutes=jitter_minutes)
+
+scheduled_iso = scheduled.isoformat()
+
+print("\n✅ Scheduled time UTC:", scheduled_iso)
+
+# =========================================================
 # CREATE POST MUTATION
-# ----------------------------
+# =========================================================
+
 mutation = """
 mutation CreatePost($input: CreatePostInput!) {
   createPost(input: $input) {
@@ -163,41 +244,79 @@ mutation CreatePost($input: CreatePostInput!) {
 }
 """
 
-# ----------------------------
-# BUILD PAYLOAD
-# ----------------------------
-def build_payload(channel):
+# =========================================================
+# BUILD META PAYLOAD
+# =========================================================
+
+def build_meta_payload(channel):
 
     payload = {
         "channelId": channel["id"],
         "text": selected_caption,
-        "schedulingType": "automatic",
-        "mode": "addToQueue"
-    }
 
-    # Add image asset
-    payload["assets"] = [
-        {
-            "image": {
-                "url": IMAGE_URL
+        # IMPORTANT:
+        # More reliable than queue mode
+        "schedulingType": "scheduled",
+
+        # Explicit schedule
+        "dueAt": scheduled_iso,
+
+        # Better than addToQueue for debugging
+        "mode": "customScheduled",
+
+        "assets": [
+            {
+                "image": {
+                    "url": IMAGE_URL
+                }
             }
-        }
-    ]
+        ]
+    }
 
     return payload
 
-# ----------------------------
+# =========================================================
+# BUILD TIKTOK PAYLOAD
+# =========================================================
+
+def build_tiktok_payload(channel):
+
+    payload = {
+        "channelId": channel["id"],
+        "text": selected_caption,
+
+        "schedulingType": "scheduled",
+        "dueAt": scheduled_iso,
+        "mode": "customScheduled",
+
+        "assets": [
+            {
+                "image": {
+                    "url": IMAGE_URL
+                }
+            }
+        ]
+    }
+
+    return payload
+
+# =========================================================
 # SEND POST
-# ----------------------------
-def send_post(channel):
+# =========================================================
 
-    payload = build_payload(channel)
+def send_post(channel, payload_builder):
 
+    payload = payload_builder(channel)
+
+    print("\n===================================")
     print(
-        f"\nPosting to "
+        f"🚀 Posting to "
         f"{channel['service']} "
-        f"({channel['name']})..."
+        f"({channel['name']})"
     )
+
+    print("\nPAYLOAD:")
+    print(json.dumps(payload, indent=2))
 
     try:
 
@@ -206,45 +325,42 @@ def send_post(channel):
             {"input": payload}
         )
 
-        print("\nPOST RESULT:")
-        print(result)
+        print("\n✅ POST SUCCESS")
+        print(json.dumps(result, indent=2))
 
     except Exception as error:
 
         print(f"\n❌ FAILED on {channel['service']}")
         print(error)
 
-        # ---------------------------------
-        # FALLBACK: TRY TEXT ONLY
-        # ---------------------------------
-        fallback_payload = {
-            "channelId": channel["id"],
-            "text": selected_caption,
-            "schedulingType": "automatic",
-            "mode": "addToQueue"
-        }
+# =========================================================
+# POST TO META
+# =========================================================
 
-        print("\n🔁 Retrying text-only fallback...")
+print("\n===================================")
+print("📘 POSTING TO META CHANNELS")
+print("===================================")
 
-        try:
+for channel in meta_channels:
 
-            fallback_result = graphql(
-                mutation,
-                {"input": fallback_payload}
-            )
+    send_post(
+        channel,
+        build_meta_payload
+    )
 
-            print("\nFALLBACK SUCCESS:")
-            print(fallback_result)
+# =========================================================
+# POST TO TIKTOK
+# =========================================================
 
-        except Exception as fallback_error:
+print("\n===================================")
+print("🎵 POSTING TO TIKTOK CHANNELS")
+print("===================================")
 
-            print("\n❌ FALLBACK FAILED")
-            print(fallback_error)
+for channel in tiktok_channels:
 
-# ----------------------------
-# RUN
-# ----------------------------
-for channel in channels:
-    send_post(channel)
+    send_post(
+        channel,
+        build_tiktok_payload
+    )
 
-print("\n✅ Script completed")
+print("\n✅ SCRIPT COMPLETED")
