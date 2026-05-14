@@ -23,4 +23,4 @@ jobs:
       - name: Run bot
         env:
           BUFFER_ACCESS_TOKEN: ${{ secrets.BUFFER_ACCESS_TOKEN }}
-        run: python post.py
+        run: python daily_poster.py
