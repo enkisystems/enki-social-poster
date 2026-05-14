@@ -16,7 +16,8 @@ CAPTION_FILE = "captions.txt"
 # ---------------------------------------------------------
 # IMPORTANT:
 # Meta APIs can be flaky with raw.githubusercontent URLs.
-# If Instagram/Facebook fail later, move images to:
+#
+# Better:
 # - Cloudflare R2
 # - S3
 # - BunnyCDN
@@ -203,9 +204,6 @@ print("✅ Image URL:", IMAGE_URL)
 # Schedule:
 # 22:00 UTC
 # +/- 24 minute jitter
-#
-# Example:
-# 21:36 -> 22:24 UTC
 # =========================================================
 
 now = datetime.now(timezone.utc)
@@ -260,18 +258,17 @@ mutation CreatePost($input: CreatePostInput!) {
 
 def build_meta_payload(channel):
 
+    service = channel["service"].lower()
+
     payload = {
         "channelId": channel["id"],
 
         "text": selected_caption,
 
-        # Correct for scheduled posting
         "schedulingType": "automatic",
 
-        # Explicit scheduling
         "mode": "customScheduled",
 
-        # Required with customScheduled
         "dueAt": scheduled_iso,
 
         "assets": [
@@ -282,6 +279,26 @@ def build_meta_payload(channel):
             }
         ]
     }
+
+    # -----------------------------------------------------
+    # INSTAGRAM REQUIRES TYPE
+    # -----------------------------------------------------
+
+    if service == "instagram":
+
+        payload["instagram"] = {
+            "type": "post"
+        }
+
+    # -----------------------------------------------------
+    # FACEBOOK REQUIRES TYPE
+    # -----------------------------------------------------
+
+    elif service == "facebook":
+
+        payload["facebook"] = {
+            "type": "post"
+        }
 
     return payload
 
@@ -338,8 +355,18 @@ def send_post(channel, payload_builder):
             {"input": payload}
         )
 
-        print("\n✅ POST SUCCESS")
-        print(json.dumps(result, indent=2))
+        create_post = result.get("createPost", {})
+
+        # MutationError returns message
+        if "message" in create_post:
+
+            print("\n❌ BUFFER ERROR:")
+            print(create_post["message"])
+
+        else:
+
+            print("\n✅ POST SUCCESS")
+            print(json.dumps(result, indent=2))
 
     except Exception as error:
 
