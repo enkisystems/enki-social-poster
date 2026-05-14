@@ -26,8 +26,6 @@ TOKEN = os.getenv("BUFFER_ACCESS_TOKEN") or os.getenv("BUFFER_API_KEY")
 
 if not TOKEN:
     print("\n❌ ERROR: Missing BUFFER_ACCESS_TOKEN / BUFFER_API_KEY")
-    print("\nAvailable environment variables:")
-    print(list(os.environ.keys()))
     exit(1)
 
 HEADERS = {
@@ -57,8 +55,6 @@ def graphql(query, variables=None):
         data = response.json()
 
     except Exception:
-
-        print("❌ Failed to decode JSON")
         print(response.text)
         raise
 
@@ -68,58 +64,6 @@ def graphql(query, variables=None):
         raise Exception(data["errors"])
 
     return data["data"]
-
-# =========================================================
-# SCHEMA INTROSPECTION
-# =========================================================
-
-schema_query = """
-{
-  instagramMeta: __type(name: "InstagramPostMetadataInput") {
-    name
-
-    inputFields {
-      name
-
-      type {
-        name
-        kind
-
-        ofType {
-          name
-          kind
-        }
-      }
-    }
-  }
-
-  facebookMeta: __type(name: "FacebookPostMetadataInput") {
-    name
-
-    inputFields {
-      name
-
-      type {
-        name
-        kind
-
-        ofType {
-          name
-          kind
-        }
-      }
-    }
-  }
-}
-"""
-
-schema_data = graphql(schema_query)
-
-print("\n===================================")
-print("META PLATFORM SCHEMA")
-print("===================================")
-
-print(json.dumps(schema_data, indent=2))
 
 # =========================================================
 # GET ORGANIZATION
@@ -174,21 +118,21 @@ for channel in channels:
     print(channel)
 
 # =========================================================
-# SEPARATE CHANNELS
+# SPLIT CHANNELS
 # =========================================================
 
-tiktok_channels = []
 meta_channels = []
+tiktok_channels = []
 
 for channel in channels:
 
     service = channel["service"].lower()
 
-    if service == "tiktok":
-        tiktok_channels.append(channel)
-
-    elif service in ["instagram", "facebook"]:
+    if service in ["instagram", "facebook"]:
         meta_channels.append(channel)
+
+    elif service == "tiktok":
+        tiktok_channels.append(channel)
 
 print("\nTikTok channels:", len(tiktok_channels))
 print("Meta channels:", len(meta_channels))
@@ -208,7 +152,7 @@ all_images = [
 ]
 
 if not all_images:
-    raise Exception("No images found in ./images")
+    raise Exception("No images found")
 
 selected_image = random.choice(all_images)
 
@@ -252,9 +196,9 @@ if scheduled <= now:
     scheduled += timedelta(days=1)
 
 # +/- 24 minute jitter
-jitter_minutes = random.randint(-24, 24)
-
-scheduled += timedelta(minutes=jitter_minutes)
+scheduled += timedelta(
+    minutes=random.randint(-24, 24)
+)
 
 scheduled_iso = scheduled.isoformat()
 
@@ -287,17 +231,10 @@ mutation CreatePost($input: CreatePostInput!) {
 # =========================================================
 # BUILD META PAYLOAD
 # =========================================================
-#
-# NOTE:
-# We STILL do not add guessed fields yet.
-#
-# We first inspect:
-# - InstagramPostMetadataInput
-# - FacebookPostMetadataInput
-#
-# =========================================================
 
 def build_meta_payload(channel):
+
+    service = channel["service"].lower()
 
     payload = {
         "channelId": channel["id"],
@@ -316,8 +253,31 @@ def build_meta_payload(channel):
                     "url": IMAGE_URL
                 }
             }
-        ]
+        ],
+
+        "metadata": {}
     }
+
+    # -----------------------------------------
+    # INSTAGRAM
+    # -----------------------------------------
+
+    if service == "instagram":
+
+        payload["metadata"]["instagram"] = {
+            "type": "post",
+            "shouldShareToFeed": True
+        }
+
+    # -----------------------------------------
+    # FACEBOOK
+    # -----------------------------------------
+
+    elif service == "facebook":
+
+        payload["metadata"]["facebook"] = {
+            "type": "post"
+        }
 
     return payload
 
@@ -375,6 +335,10 @@ def send_post(channel, payload_builder):
         )
 
         create_post = result.get("createPost", {})
+
+        # -------------------------------------
+        # BUFFER MUTATION ERROR
+        # -------------------------------------
 
         if "message" in create_post:
 
