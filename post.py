@@ -13,20 +13,6 @@ API_URL = "https://api.buffer.com/graphql"
 IMAGE_FOLDER = "./images"
 CAPTION_FILE = "captions.txt"
 
-# ---------------------------------------------------------
-# IMPORTANT:
-# Meta APIs can be flaky with raw.githubusercontent URLs.
-#
-# Better:
-# - Cloudflare R2
-# - S3
-# - BunnyCDN
-# - Shopify CDN
-#
-# Also:
-# JPG works better than PNG for Meta.
-# ---------------------------------------------------------
-
 BASE_IMAGE_URL = (
     "https://raw.githubusercontent.com/"
     "enkisystems/enki-social-poster/main/images/"
@@ -82,6 +68,51 @@ def graphql(query, variables=None):
         raise Exception(data["errors"])
 
     return data["data"]
+
+# =========================================================
+# SCHEMA INTROSPECTION
+# =========================================================
+#
+# This will show EVERY valid field Buffer currently
+# accepts in CreatePostInput.
+#
+# Since Buffer is changing schemas during beta,
+# this removes the guesswork.
+#
+# =========================================================
+
+schema_query = """
+{
+  __type(name: "CreatePostInput") {
+    name
+    inputFields {
+      name
+      type {
+        name
+        kind
+
+        ofType {
+          name
+          kind
+
+          ofType {
+            name
+            kind
+          }
+        }
+      }
+    }
+  }
+}
+"""
+
+schema_data = graphql(schema_query)
+
+print("\n===================================")
+print("CREATE POST INPUT SCHEMA")
+print("===================================")
+
+print(json.dumps(schema_data, indent=2))
 
 # =========================================================
 # GET ORGANIZATION
@@ -249,6 +280,20 @@ mutation CreatePost($input: CreatePostInput!) {
 # =========================================================
 # BUILD META PAYLOAD
 # =========================================================
+#
+# NOTE:
+# We are intentionally NOT adding:
+#
+# - type
+# - facebook
+# - instagram
+#
+# because Buffer schema rejected them.
+#
+# We first introspect the schema above,
+# then adapt to whatever fields actually exist.
+#
+# =========================================================
 
 def build_meta_payload(channel):
 
@@ -262,12 +307,6 @@ def build_meta_payload(channel):
         "mode": "customScheduled",
 
         "dueAt": scheduled_iso,
-
-        # -------------------------------------------------
-        # THIS IS THE IMPORTANT FIX
-        # -------------------------------------------------
-
-        "type": "post",
 
         "assets": [
             {
