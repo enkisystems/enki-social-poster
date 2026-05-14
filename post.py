@@ -265,7 +265,7 @@ def build_meta_payload(channel):
     if service == "instagram":
 
         payload["metadata"]["instagram"] = {
-            "type": "post",
+            "type": "story",
             "shouldShareToFeed": True
         }
 
@@ -276,7 +276,7 @@ def build_meta_payload(channel):
     elif service == "facebook":
 
         payload["metadata"]["facebook"] = {
-            "type": "post"
+            "type": "story"
         }
 
     return payload
