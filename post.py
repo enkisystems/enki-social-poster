@@ -13,14 +13,19 @@ API_URL = "https://api.buffer.com/graphql"
 IMAGE_FOLDER = "./images"
 CAPTION_FILE = "captions.txt"
 
+# ---------------------------------------------------------
 # IMPORTANT:
-# Use a PROPER CDN if possible.
-# GitHub raw URLs are flaky with Meta.
+# Meta APIs can be flaky with raw.githubusercontent URLs.
+# If Instagram/Facebook fail later, move images to:
+# - Cloudflare R2
+# - S3
+# - BunnyCDN
+# - Shopify CDN
 #
-# Example:
-# https://cdn.yoursite.com/dogs/
-#
-# TEMPORARY:
+# Also:
+# JPG works better than PNG for Meta.
+# ---------------------------------------------------------
+
 BASE_IMAGE_URL = (
     "https://raw.githubusercontent.com/"
     "enkisystems/enki-social-poster/main/images/"
@@ -63,7 +68,9 @@ def graphql(query, variables=None):
 
     try:
         data = response.json()
+
     except Exception:
+
         print("❌ Failed to decode JSON")
         print(response.text)
         raise
@@ -195,8 +202,11 @@ print("✅ Image URL:", IMAGE_URL)
 #
 # Schedule:
 # 22:00 UTC
-# +/- 24 min jitter
+# +/- 24 minute jitter
 #
+# Example:
+# 21:36 -> 22:24 UTC
+# =========================================================
 
 now = datetime.now(timezone.utc)
 
@@ -207,11 +217,11 @@ scheduled = now.replace(
     microsecond=0
 )
 
-# If today's slot already passed -> tomorrow
+# If today's schedule already passed -> tomorrow
 if scheduled <= now:
     scheduled += timedelta(days=1)
 
-# Jitter between -24 and +24 minutes
+# Random jitter
 jitter_minutes = random.randint(-24, 24)
 
 scheduled += timedelta(minutes=jitter_minutes)
@@ -252,17 +262,17 @@ def build_meta_payload(channel):
 
     payload = {
         "channelId": channel["id"],
+
         "text": selected_caption,
 
-        # IMPORTANT:
-        # More reliable than queue mode
-        "schedulingType": "scheduled",
+        # Correct for scheduled posting
+        "schedulingType": "automatic",
 
-        # Explicit schedule
-        "dueAt": scheduled_iso,
-
-        # Better than addToQueue for debugging
+        # Explicit scheduling
         "mode": "customScheduled",
+
+        # Required with customScheduled
+        "dueAt": scheduled_iso,
 
         "assets": [
             {
@@ -283,11 +293,14 @@ def build_tiktok_payload(channel):
 
     payload = {
         "channelId": channel["id"],
+
         "text": selected_caption,
 
-        "schedulingType": "scheduled",
-        "dueAt": scheduled_iso,
+        "schedulingType": "automatic",
+
         "mode": "customScheduled",
+
+        "dueAt": scheduled_iso,
 
         "assets": [
             {
