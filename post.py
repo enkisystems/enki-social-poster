@@ -41,7 +41,10 @@ def graphql(query, variables=None):
 
     response = requests.post(
         API_URL,
-        json={"query": query, "variables": variables or {}},
+        json={
+            "query": query,
+            "variables": variables or {}
+        },
         headers=HEADERS
     )
 
@@ -57,7 +60,7 @@ def graphql(query, variables=None):
     return data["data"]
 
 # =========================================================
-# GET ORG + CHANNELS (unchanged)
+# GET ORG
 # =========================================================
 
 org_query = """
@@ -72,9 +75,14 @@ query {
 """
 
 org_data = graphql(org_query)
-org_id = org_data["account"]["organizations"][0]["id"]
+orgs = org_data["account"]["organizations"]
 
-print("\n✅ Using organization:", org_data["account"]["organizations"][0]["name"])
+org_id = orgs[0]["id"]
+print("\n✅ Using organization:", orgs[0]["name"])
+
+# =========================================================
+# GET CHANNELS
+# =========================================================
 
 channels_query = """
 query ($orgId: OrganizationId!) {
@@ -88,6 +96,10 @@ query ($orgId: OrganizationId!) {
 
 channels = graphql(channels_query, {"orgId": org_id})["channels"]
 
+print("\n✅ Connected channels:")
+for c in channels:
+    print(c)
+
 meta_channels = []
 tiktok_channels = []
 
@@ -97,11 +109,8 @@ for c in channels:
     elif c["service"].lower() == "tiktok":
         tiktok_channels.append(c)
 
-print("\nTikTok:", len(tiktok_channels))
-print("Meta:", len(meta_channels))
-
 # =========================================================
-# IMAGE + CAPTION
+# IMAGE
 # =========================================================
 
 all_images = [
@@ -112,21 +121,22 @@ all_images = [
 selected_image = random.choice(all_images)
 IMAGE_URL = BASE_IMAGE_URL + selected_image
 
+# =========================================================
+# CAPTIONS
+# =========================================================
+
 with open(CAPTION_FILE, "r", encoding="utf-8") as f:
-    captions = [l.strip() for l in f if l.strip()]
+    captions = [l.strip() for l in f if l.strip() and l.strip() != "========="]
 
 selected_caption = random.choice(captions)
 
-print("\n✅ Image:", selected_image)
-print("✅ Caption:", selected_caption)
-
 # =========================================================
-# TIME (22:30 UTC target)
+# SCHEDULE TIME (22:00 UTC + jitter)
 # =========================================================
 
 now = datetime.now(timezone.utc)
 
-scheduled = now.replace(hour=22, minute=30, second=0, microsecond=0)
+scheduled = now.replace(hour=22, minute=0, second=0, microsecond=0)
 
 if scheduled <= now:
     scheduled += timedelta(days=1)
@@ -135,18 +145,19 @@ scheduled += timedelta(minutes=random.randint(-24, 24))
 
 scheduled_iso = scheduled.isoformat()
 
-print("\n✅ Scheduled:", scheduled_iso)
+print("\n✅ Scheduled time UTC:", scheduled_iso)
 
 # =========================================================
-# FEED POST DAYS (NEW LOGIC)
+# POST STRATEGY
 # =========================================================
 
-# Tuesday (2) + Friday (5)
-feed_days = [2, 5]
+today = datetime.now(timezone.utc).weekday()
 
-is_feed_day = datetime.utcnow().isoweekday() in feed_days
+POST_DAYS = [1, 4]  # Tuesday, Friday
+is_post_day = today in POST_DAYS
 
-print("\n📌 Feed post today?", is_feed_day)
+print("\n📌 Caption mode:")
+print("Full caption day?", is_post_day)
 
 # =========================================================
 # GRAPHQL MUTATION
@@ -155,12 +166,19 @@ print("\n📌 Feed post today?", is_feed_day)
 mutation = """
 mutation CreatePost($input: CreatePostInput!) {
   createPost(input: $input) {
+
     ... on PostActionSuccess {
-      post { id text dueAt }
+      post {
+        id
+        text
+        dueAt
+      }
     }
+
     ... on MutationError {
       message
     }
+
   }
 }
 """
@@ -173,15 +191,9 @@ def build_meta_payload(channel):
 
     service = channel["service"].lower()
 
-    # STORY (always daily)
-    if not is_feed_day:
-        text = " "
-    else:
-        text = selected_caption
-
     payload = {
         "channelId": channel["id"],
-        "text": text,
+        "text": selected_caption if is_post_day else "",
         "schedulingType": "automatic",
         "mode": "customScheduled",
         "dueAt": scheduled_iso,
@@ -192,21 +204,29 @@ def build_meta_payload(channel):
                 }
             }
         ],
-        "metadata": {
-            service: {
-                "type": "story" if not is_feed_day else "post",
-                "shouldShareToFeed": True
-            }
-        }
+        "metadata": {}
     }
+
+    # INSTAGRAM
+    if service == "instagram":
+        payload["metadata"]["instagram"] = {
+            "type": "post" if is_post_day else "story"
+        }
+
+    # FACEBOOK
+    elif service == "facebook":
+        payload["metadata"]["facebook"] = {
+            "type": "post" if is_post_day else "story"
+        }
 
     return payload
 
 # =========================================================
-# TIKTOK (unchanged)
+# TIKTOK PAYLOAD
 # =========================================================
 
 def build_tiktok_payload(channel):
+
     return {
         "channelId": channel["id"],
         "text": selected_caption,
@@ -214,15 +234,19 @@ def build_tiktok_payload(channel):
         "mode": "customScheduled",
         "dueAt": scheduled_iso,
         "assets": [
-            {"image": {"url": IMAGE_URL}}
+            {
+                "image": {
+                    "url": IMAGE_URL
+                }
+            }
         ]
     }
 
 # =========================================================
-# SEND
+# SEND POST
 # =========================================================
 
-def send(channel, builder):
+def send_post(channel, builder):
 
     payload = builder(channel)
 
@@ -230,25 +254,48 @@ def send(channel, builder):
     print(f"🚀 Posting {channel['service']} ({channel['name']})")
     print(json.dumps(payload, indent=2))
 
-    result = graphql(mutation, {"input": payload})
+    try:
+        result = graphql(mutation, {"input": payload})
 
-    print("\n✅ RESULT:")
-    print(json.dumps(result, indent=2))
+        post = result.get("createPost", {})
+
+        if "message" in post:
+            print("\n❌ BUFFER ERROR:")
+            print(post["message"])
+        else:
+            print("\n✅ POST SUCCESS")
+            print(json.dumps(result, indent=2))
+
+    except Exception as e:
+        print(f"\n❌ FAILED on {channel['service']}")
+        print(e)
 
 # =========================================================
-# RUN META
+# META
 # =========================================================
 
-print("\n📘 META")
+print("\n===================================")
+print("📘 POSTING TO META CHANNELS")
+print("===================================")
+
 for c in meta_channels:
-    send(c, build_meta_payload)
+    try:
+        send_post(c, build_meta_payload)
+    except Exception as e:
+        print(f"❌ META FAILED {c['service']}: {e}")
 
 # =========================================================
-# RUN TIKTOK
+# TIKTOK
 # =========================================================
 
-print("\n🎵 TIKTOK")
+print("\n===================================")
+print("🎵 POSTING TO TIKTOK CHANNELS")
+print("===================================")
+
 for c in tiktok_channels:
-    send(c, build_tiktok_payload)
+    try:
+        send_post(c, build_tiktok_payload)
+    except Exception as e:
+        print(f"❌ TIKTOK FAILED {c['service']}: {e}")
 
-print("\n✅ DONE")
+print("\n✅ SCRIPT COMPLETED")
