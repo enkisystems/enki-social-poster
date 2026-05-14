@@ -200,11 +200,6 @@ print("✅ Image URL:", IMAGE_URL)
 # =========================================================
 # SCHEDULE TIME
 # =========================================================
-#
-# Schedule:
-# 22:00 UTC
-# +/- 24 minute jitter
-# =========================================================
 
 now = datetime.now(timezone.utc)
 
@@ -215,11 +210,10 @@ scheduled = now.replace(
     microsecond=0
 )
 
-# If today's schedule already passed -> tomorrow
 if scheduled <= now:
     scheduled += timedelta(days=1)
 
-# Random jitter
+# +/- 24 minute jitter
 jitter_minutes = random.randint(-24, 24)
 
 scheduled += timedelta(minutes=jitter_minutes)
@@ -258,8 +252,6 @@ mutation CreatePost($input: CreatePostInput!) {
 
 def build_meta_payload(channel):
 
-    service = channel["service"].lower()
-
     payload = {
         "channelId": channel["id"],
 
@@ -271,6 +263,12 @@ def build_meta_payload(channel):
 
         "dueAt": scheduled_iso,
 
+        # -------------------------------------------------
+        # THIS IS THE IMPORTANT FIX
+        # -------------------------------------------------
+
+        "type": "post",
+
         "assets": [
             {
                 "image": {
@@ -279,26 +277,6 @@ def build_meta_payload(channel):
             }
         ]
     }
-
-    # -----------------------------------------------------
-    # INSTAGRAM REQUIRES TYPE
-    # -----------------------------------------------------
-
-    if service == "instagram":
-
-        payload["instagram"] = {
-            "type": "post"
-        }
-
-    # -----------------------------------------------------
-    # FACEBOOK REQUIRES TYPE
-    # -----------------------------------------------------
-
-    elif service == "facebook":
-
-        payload["facebook"] = {
-            "type": "post"
-        }
 
     return payload
 
@@ -357,7 +335,6 @@ def send_post(channel, payload_builder):
 
         create_post = result.get("createPost", {})
 
-        # MutationError returns message
         if "message" in create_post:
 
             print("\n❌ BUFFER ERROR:")
