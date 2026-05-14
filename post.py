@@ -72,21 +72,10 @@ def graphql(query, variables=None):
 # =========================================================
 # SCHEMA INTROSPECTION
 # =========================================================
-#
-# We introspect BOTH:
-#
-# - CreatePostInput
-# - PostInputMetaData
-#
-# because Meta channels are demanding a "type"
-# field somewhere, and metadata is now the most
-# likely location.
-#
-# =========================================================
 
 schema_query = """
 {
-  createPostInput: __type(name: "CreatePostInput") {
+  instagramMeta: __type(name: "InstagramPostMetadataInput") {
     name
 
     inputFields {
@@ -104,7 +93,7 @@ schema_query = """
     }
   }
 
-  postMetadata: __type(name: "PostInputMetaData") {
+  facebookMeta: __type(name: "FacebookPostMetadataInput") {
     name
 
     inputFields {
@@ -127,7 +116,7 @@ schema_query = """
 schema_data = graphql(schema_query)
 
 print("\n===================================")
-print("FULL CREATE POST SCHEMA")
+print("META PLATFORM SCHEMA")
 print("===================================")
 
 print(json.dumps(schema_data, indent=2))
@@ -299,12 +288,12 @@ mutation CreatePost($input: CreatePostInput!) {
 # BUILD META PAYLOAD
 # =========================================================
 #
-# IMPORTANT:
+# NOTE:
+# We STILL do not add guessed fields yet.
 #
-# We are NOT adding any guessed fields yet.
-#
-# We first inspect the schema output above,
-# then add the correct metadata structure.
+# We first inspect:
+# - InstagramPostMetadataInput
+# - FacebookPostMetadataInput
 #
 # =========================================================
 
