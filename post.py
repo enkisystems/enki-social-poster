@@ -126,12 +126,16 @@ IMAGE_URL = BASE_IMAGE_URL + selected_image
 # =========================================================
 
 with open(CAPTION_FILE, "r", encoding="utf-8") as f:
-    captions = [l.strip() for l in f if l.strip() and l.strip() != "========="]
+    captions = [
+        line.strip()
+        for line in f
+        if line.strip() and line.strip() != "========="
+    ]
 
 selected_caption = random.choice(captions)
 
 # =========================================================
-# SCHEDULE TIME (22:00 UTC + jitter)
+# SCHEDULE TIME
 # =========================================================
 
 now = datetime.now(timezone.utc)
@@ -148,19 +152,19 @@ scheduled_iso = scheduled.isoformat()
 print("\n✅ Scheduled time UTC:", scheduled_iso)
 
 # =========================================================
-# POST STRATEGY
+# STRATEGY
 # =========================================================
 
 today = datetime.now(timezone.utc).weekday()
 
-POST_DAYS = [1, 4]  # Tuesday, Friday
+POST_DAYS = [1, 4]  # Tue / Fri
 is_post_day = today in POST_DAYS
 
 print("\n📌 Caption mode:")
 print("Full caption day?", is_post_day)
 
 # =========================================================
-# GRAPHQL MUTATION
+# MUTATION
 # =========================================================
 
 mutation = """
@@ -207,13 +211,20 @@ def build_meta_payload(channel):
         "metadata": {}
     }
 
-    # INSTAGRAM
+    # =====================================================
+    # INSTAGRAM (FIXED)
+    # =====================================================
+
     if service == "instagram":
         payload["metadata"]["instagram"] = {
-            "type": "post" if is_post_day else "story"
+            "type": "post" if is_post_day else "story",
+            "shouldShareToFeed": True   # REQUIRED by Buffer schema
         }
 
+    # =====================================================
     # FACEBOOK
+    # =====================================================
+
     elif service == "facebook":
         payload["metadata"]["facebook"] = {
             "type": "post" if is_post_day else "story"
@@ -271,7 +282,7 @@ def send_post(channel, builder):
         print(e)
 
 # =========================================================
-# META
+# RUN META
 # =========================================================
 
 print("\n===================================")
@@ -285,7 +296,7 @@ for c in meta_channels:
         print(f"❌ META FAILED {c['service']}: {e}")
 
 # =========================================================
-# TIKTOK
+# RUN TIKTOK
 # =========================================================
 
 print("\n===================================")
