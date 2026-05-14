@@ -73,20 +73,25 @@ def graphql(query, variables=None):
 # SCHEMA INTROSPECTION
 # =========================================================
 #
-# This will show EVERY valid field Buffer currently
-# accepts in CreatePostInput.
+# We introspect BOTH:
 #
-# Since Buffer is changing schemas during beta,
-# this removes the guesswork.
+# - CreatePostInput
+# - PostInputMetaData
+#
+# because Meta channels are demanding a "type"
+# field somewhere, and metadata is now the most
+# likely location.
 #
 # =========================================================
 
 schema_query = """
 {
-  __type(name: "CreatePostInput") {
+  createPostInput: __type(name: "CreatePostInput") {
     name
+
     inputFields {
       name
+
       type {
         name
         kind
@@ -94,11 +99,24 @@ schema_query = """
         ofType {
           name
           kind
+        }
+      }
+    }
+  }
 
-          ofType {
-            name
-            kind
-          }
+  postMetadata: __type(name: "PostInputMetaData") {
+    name
+
+    inputFields {
+      name
+
+      type {
+        name
+        kind
+
+        ofType {
+          name
+          kind
         }
       }
     }
@@ -109,7 +127,7 @@ schema_query = """
 schema_data = graphql(schema_query)
 
 print("\n===================================")
-print("CREATE POST INPUT SCHEMA")
+print("FULL CREATE POST SCHEMA")
 print("===================================")
 
 print(json.dumps(schema_data, indent=2))
@@ -281,17 +299,12 @@ mutation CreatePost($input: CreatePostInput!) {
 # BUILD META PAYLOAD
 # =========================================================
 #
-# NOTE:
-# We are intentionally NOT adding:
+# IMPORTANT:
 #
-# - type
-# - facebook
-# - instagram
+# We are NOT adding any guessed fields yet.
 #
-# because Buffer schema rejected them.
-#
-# We first introspect the schema above,
-# then adapt to whatever fields actually exist.
+# We first inspect the schema output above,
+# then add the correct metadata structure.
 #
 # =========================================================
 
