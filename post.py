@@ -53,7 +53,6 @@ def graphql(query, variables=None):
 
     try:
         data = response.json()
-
     except Exception:
         print(response.text)
         raise
@@ -143,12 +142,7 @@ print("Meta channels:", len(meta_channels))
 
 all_images = [
     file for file in os.listdir(IMAGE_FOLDER)
-    if file.lower().endswith((
-        ".png",
-        ".jpg",
-        ".jpeg",
-        ".webp"
-    ))
+    if file.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))
 ]
 
 if not all_images:
@@ -159,7 +153,7 @@ selected_image = random.choice(all_images)
 IMAGE_URL = BASE_IMAGE_URL + selected_image
 
 # =========================================================
-# RANDOM CAPTION
+# CAPTIONS
 # =========================================================
 
 with open(CAPTION_FILE, "r", encoding="utf-8") as file:
@@ -175,19 +169,36 @@ if not captions:
 
 selected_caption = random.choice(captions)
 
+# =========================================================
+# CAPTION STRATEGY (NEW)
+# =========================================================
+# 5 out of 7 days → story-style (no selling caption)
+# 2 out of 7 days → full caption feed post
+
+today_seed = datetime.utcnow().isoweekday()  # 1–7 stable daily pattern
+is_caption_day = today_seed in [3, 6]  # tweak anytime
+
+if is_caption_day:
+    meta_caption = selected_caption
+else:
+    meta_caption = " "
+
+print("\n📌 Caption mode:")
+print("Full caption day?" , is_caption_day)
+
 print("\n✅ Selected image:", selected_image)
-print("✅ Selected caption:", selected_caption)
+print("✅ Caption (Meta):", meta_caption)
 print("✅ Image URL:", IMAGE_URL)
 
 # =========================================================
-# SCHEDULE TIME
+# SCHEDULE TIME (22:30 UTC target)
 # =========================================================
 
 now = datetime.now(timezone.utc)
 
 scheduled = now.replace(
     hour=22,
-    minute=0,
+    minute=30,
     second=0,
     microsecond=0
 )
@@ -195,7 +206,6 @@ scheduled = now.replace(
 if scheduled <= now:
     scheduled += timedelta(days=1)
 
-# +/- 24 minute jitter
 scheduled += timedelta(
     minutes=random.randint(-24, 24)
 )
@@ -205,7 +215,7 @@ scheduled_iso = scheduled.isoformat()
 print("\n✅ Scheduled time UTC:", scheduled_iso)
 
 # =========================================================
-# CREATE POST MUTATION
+# GRAPHQL MUTATION
 # =========================================================
 
 mutation = """
@@ -229,7 +239,7 @@ mutation CreatePost($input: CreatePostInput!) {
 """
 
 # =========================================================
-# BUILD META PAYLOAD
+# META PAYLOAD
 # =========================================================
 
 def build_meta_payload(channel):
@@ -238,15 +248,10 @@ def build_meta_payload(channel):
 
     payload = {
         "channelId": channel["id"],
-
-        "text": selected_caption,
-
+        "text": meta_caption,
         "schedulingType": "automatic",
-
         "mode": "customScheduled",
-
         "dueAt": scheduled_iso,
-
         "assets": [
             {
                 "image": {
@@ -254,27 +259,16 @@ def build_meta_payload(channel):
                 }
             }
         ],
-
         "metadata": {}
     }
 
-    # -----------------------------------------
-    # INSTAGRAM
-    # -----------------------------------------
-
     if service == "instagram":
-
         payload["metadata"]["instagram"] = {
             "type": "story",
             "shouldShareToFeed": True
         }
 
-    # -----------------------------------------
-    # FACEBOOK
-    # -----------------------------------------
-
     elif service == "facebook":
-
         payload["metadata"]["facebook"] = {
             "type": "story"
         }
@@ -282,22 +276,17 @@ def build_meta_payload(channel):
     return payload
 
 # =========================================================
-# BUILD TIKTOK PAYLOAD
+# TIKTOK PAYLOAD (ALWAYS CAPTIONED)
 # =========================================================
 
 def build_tiktok_payload(channel):
 
-    payload = {
+    return {
         "channelId": channel["id"],
-
         "text": selected_caption,
-
         "schedulingType": "automatic",
-
         "mode": "customScheduled",
-
         "dueAt": scheduled_iso,
-
         "assets": [
             {
                 "image": {
@@ -306,8 +295,6 @@ def build_tiktok_payload(channel):
             }
         ]
     }
-
-    return payload
 
 # =========================================================
 # SEND POST
@@ -318,42 +305,21 @@ def send_post(channel, payload_builder):
     payload = payload_builder(channel)
 
     print("\n===================================")
-    print(
-        f"🚀 Posting to "
-        f"{channel['service']} "
-        f"({channel['name']})"
-    )
+    print(f"🚀 Posting to {channel['service']} ({channel['name']})")
 
     print("\nPAYLOAD:")
     print(json.dumps(payload, indent=2))
 
-    try:
+    result = graphql(mutation, {"input": payload})
 
-        result = graphql(
-            mutation,
-            {"input": payload}
-        )
+    create_post = result.get("createPost", {})
 
-        create_post = result.get("createPost", {})
-
-        # -------------------------------------
-        # BUFFER MUTATION ERROR
-        # -------------------------------------
-
-        if "message" in create_post:
-
-            print("\n❌ BUFFER ERROR:")
-            print(create_post["message"])
-
-        else:
-
-            print("\n✅ POST SUCCESS")
-            print(json.dumps(result, indent=2))
-
-    except Exception as error:
-
-        print(f"\n❌ FAILED on {channel['service']}")
-        print(error)
+    if "message" in create_post:
+        print("\n❌ BUFFER ERROR:")
+        print(create_post["message"])
+    else:
+        print("\n✅ POST SUCCESS")
+        print(json.dumps(result, indent=2))
 
 # =========================================================
 # POST TO META
@@ -364,11 +330,7 @@ print("📘 POSTING TO META CHANNELS")
 print("===================================")
 
 for channel in meta_channels:
-
-    send_post(
-        channel,
-        build_meta_payload
-    )
+    send_post(channel, build_meta_payload)
 
 # =========================================================
 # POST TO TIKTOK
@@ -379,10 +341,6 @@ print("🎵 POSTING TO TIKTOK CHANNELS")
 print("===================================")
 
 for channel in tiktok_channels:
-
-    send_post(
-        channel,
-        build_tiktok_payload
-    )
+    send_post(channel, build_tiktok_payload)
 
 print("\n✅ SCRIPT COMPLETED")
