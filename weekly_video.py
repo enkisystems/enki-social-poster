@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 API_URL = "https://api.buffer.com/graphql"
 
 VIDEO_FOLDER = "./videos"
-CAPTION_FILE = "video_captions.txt"
+CAPTION_FILE = "captions.txt"
 
 BASE_VIDEO_URL = (
     "https://raw.githubusercontent.com/"
