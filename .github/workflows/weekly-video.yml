@@ -1,0 +1,27 @@
+name: Weekly GateGuard Video
+
+on:
+  workflow_dispatch:
+
+  schedule:
+    - cron: '0 22 * * 6'
+
+jobs:
+  post-video:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run weekly video bot
+        env:
+          BUFFER_ACCESS_TOKEN: ${{ secrets.BUFFER_ACCESS_TOKEN }}
+        run: python weekly_video.py
