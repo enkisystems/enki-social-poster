@@ -158,10 +158,6 @@ scheduled = now.replace(
 
 scheduled += timedelta(minutes=random.randint(-20, 20))
 
-scheduled += timedelta(
-    minutes=random.randint(-20, 20)
-)
-
 scheduled_iso = scheduled.isoformat()
 
 print("\n✅ Scheduled UTC:", scheduled_iso)
