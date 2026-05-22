@@ -1,4 +1,4 @@
-name: Weekly GateGuard UGC
+name: Monthly (Weekly now) GateGuard UGC
 
 on:
   workflow_dispatch:
