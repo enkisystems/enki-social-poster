@@ -157,7 +157,7 @@ print("\n✅ Scheduled time UTC:", scheduled_iso)
 
 today = datetime.now(timezone.utc).weekday()
 
-POST_DAYS = [1]  # Tue 
+POST_DAYS = [4]  # Thr -> Fri post 
 is_post_day = today in POST_DAYS
 
 print("\n📌 Caption mode:")

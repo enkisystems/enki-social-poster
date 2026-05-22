@@ -1,14 +1,13 @@
-name: Weekly GateGuard Video
+name: Monthly (Weekly now) GateGuard UGC
 
 on:
   workflow_dispatch:
 
   schedule:
-    - cron: '0 22 * * 0'
-    - cron: '0 22 * * 4'
+    - cron: '0 22 * * 5'
 
 jobs:
-  post-video:
+  post-ugc:
     runs-on: ubuntu-latest
 
     steps:
@@ -22,7 +21,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run weekly video bot
+      - name: Run UGC bot
         env:
           BUFFER_ACCESS_TOKEN: ${{ secrets.BUFFER_ACCESS_TOKEN }}
-        run: python weekly_video.py
+        run: python monthly_ugc.py
