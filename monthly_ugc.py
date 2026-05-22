@@ -156,8 +156,7 @@ scheduled = now.replace(
     microsecond=0
 )
 
-if scheduled <= now:
-    scheduled += timedelta(days=1)
+scheduled += timedelta(minutes=random.randint(-20, 20))
 
 scheduled += timedelta(
     minutes=random.randint(-20, 20)
