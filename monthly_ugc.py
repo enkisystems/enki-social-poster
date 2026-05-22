@@ -139,8 +139,8 @@ print("\n✅ Selected caption:", selected_caption)
 now = datetime.now(timezone.utc)
 
 scheduled = now.replace(
-    hour=18,
-    minute=0,
+    hour=22,
+    minute=30,
     second=0,
     microsecond=0
 )
