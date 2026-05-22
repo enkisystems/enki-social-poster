@@ -38,6 +38,7 @@ HEADERS = {
 # =========================================================
 
 def graphql(query, variables=None):
+
     response = requests.post(
         API_URL,
         json={
@@ -51,6 +52,7 @@ def graphql(query, variables=None):
     print("STATUS:", response.status_code)
 
     data = response.json()
+
     print(json.dumps(data, indent=2))
 
     if "errors" in data:
@@ -74,6 +76,10 @@ query {
 """
 
 orgs = graphql(org_query)["account"]["organizations"]
+
+if not orgs:
+    raise Exception("No organizations found")
+
 org_id = orgs[0]["id"]
 
 print("\n✅ Using organization:", orgs[0]["name"])
@@ -92,12 +98,25 @@ query ($orgId: OrganizationId!) {
 }
 """
 
-channels = graphql(channels_query, {"orgId": org_id})["channels"]
+channels = graphql(
+    channels_query,
+    {"orgId": org_id}
+)["channels"]
+
+print("\n✅ Connected channels:")
+
+for c in channels:
+    print(c)
 
 supported_channels = []
 
 for c in channels:
-    if c["service"].lower() in ["instagram", "facebook", "tiktok"]:
+
+    if c["service"].lower() in [
+        "instagram",
+        "facebook",
+        "tiktok"
+    ]:
         supported_channels.append(c)
 
 # =========================================================
@@ -106,35 +125,49 @@ for c in channels:
 
 all_videos = [
     f for f in os.listdir(VIDEO_FOLDER)
-    if f.lower().endswith((".mp4", ".mov", ".m4v"))
+    if f.lower().endswith((
+        ".mp4",
+        ".mov",
+        ".m4v"
+    ))
 ]
 
 if not all_videos:
     raise Exception("No UGC videos found")
 
 selected_video = random.choice(all_videos)
+
 VIDEO_URL = BASE_VIDEO_URL + selected_video
 
 print("\n✅ Selected UGC:", selected_video)
+print("✅ Video URL:", VIDEO_URL)
 
 # =========================================================
 # PICK RANDOM CAPTION
 # =========================================================
 
 with open(CAPTION_FILE, "r", encoding="utf-8") as f:
+
     captions = [
         line.strip()
         for line in f
         if line.strip() and line.strip() != "========="
     ]
 
+if not captions:
+    raise Exception("No captions found")
+
 selected_caption = random.choice(captions)
 
-print("\n✅ Selected caption:", selected_caption)
+print("\n✅ Selected caption:")
+print(selected_caption)
 
 # =========================================================
-# SCHEDULE TIME (FIXED)
+# SCHEDULE TIME
 # =========================================================
+
+# 22:30 UTC = 06:30 Perth
+# Consistent with your other scripts
 
 now = datetime.now(timezone.utc)
 
@@ -145,12 +178,14 @@ scheduled = now.replace(
     microsecond=0
 )
 
-# ensure future time
+# Ensure future schedule
 if scheduled <= now:
     scheduled += timedelta(days=1)
 
-# small random offset to avoid platform patterning
-scheduled += timedelta(minutes=random.randint(-20, 20))
+# Small random jitter
+scheduled += timedelta(
+    minutes=random.randint(-20, 20)
+)
 
 scheduled_iso = scheduled.isoformat()
 
@@ -180,27 +215,41 @@ mutation CreatePost($input: CreatePostInput!) {
 """
 
 # =========================================================
-# POST SENDER
+# SEND POST
 # =========================================================
 
 def send_post(channel, payload):
 
     print("\n===================================")
-    print(f"🚀 Posting {channel['service']} ({channel['name']})")
+    print(
+        f"🚀 Posting "
+        f"{channel['service']} "
+        f"({channel['name']})"
+    )
+
     print(json.dumps(payload, indent=2))
 
     try:
-        result = graphql(mutation, {"input": payload})
+
+        result = graphql(
+            mutation,
+            {"input": payload}
+        )
+
         post = result.get("createPost", {})
 
         if "message" in post:
+
             print("\n❌ BUFFER ERROR:")
             print(post["message"])
+
         else:
+
             print("\n✅ SUCCESS")
             print(json.dumps(result, indent=2))
 
     except Exception as e:
+
         print("\n❌ FAILED")
         print(e)
 
@@ -214,10 +263,15 @@ def build_payload(channel):
 
     payload = {
         "channelId": channel["id"],
+
         "text": selected_caption,
+
         "schedulingType": "automatic",
+
         "mode": "customScheduled",
+
         "dueAt": scheduled_iso,
+
         "assets": [
             {
                 "video": {
@@ -227,20 +281,37 @@ def build_payload(channel):
         ]
     }
 
+    # =====================================================
+    # INSTAGRAM STORY
+    # =====================================================
+
     if service == "instagram":
+
         payload["metadata"] = {
             "instagram": {
-                "type": "reel",
-                "shouldShareToFeed": True
+                "type": "story",
+                "shouldShareToFeed": False
             }
         }
 
+    # =====================================================
+    # FACEBOOK STORY
+    # =====================================================
+
     elif service == "facebook":
+
         payload["metadata"] = {
             "facebook": {
-                "type": "reel"
+                "type": "story"
             }
         }
+
+    # =====================================================
+    # TIKTOK VIDEO POST
+    # =====================================================
+
+    # TikTok stays as a normal video post
+    # since story support is inconsistent
 
     return payload
 
@@ -249,10 +320,14 @@ def build_payload(channel):
 # =========================================================
 
 print("\n===================================")
-print("🎬 POSTING WEEKLY UGC")
+print("🎬 POSTING WEEKLY UGC STORIES")
 print("===================================")
 
 for c in supported_channels:
-    send_post(c, build_payload(c))
+
+    send_post(
+        c,
+        build_payload(c)
+    )
 
 print("\n✅ DONE")
