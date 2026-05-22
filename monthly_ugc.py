@@ -156,7 +156,7 @@ scheduled = now.replace(
     microsecond=0
 )
 
-scheduled += timedelta(minutes=random.randint(-20, 20))
+scheduled = now.replace(hour=18, minute=0, second=0, microsecond=0)
 
 scheduled_iso = scheduled.isoformat()
 
