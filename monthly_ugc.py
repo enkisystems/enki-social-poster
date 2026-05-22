@@ -34,11 +34,10 @@ HEADERS = {
 }
 
 # =========================================================
-# GRAPHQL
+# GRAPHQL HELPER
 # =========================================================
 
 def graphql(query, variables=None):
-
     response = requests.post(
         API_URL,
         json={
@@ -52,7 +51,6 @@ def graphql(query, variables=None):
     print("STATUS:", response.status_code)
 
     data = response.json()
-
     print(json.dumps(data, indent=2))
 
     if "errors" in data:
@@ -61,7 +59,7 @@ def graphql(query, variables=None):
     return data["data"]
 
 # =========================================================
-# GET ORG
+# GET ORGANIZATION
 # =========================================================
 
 org_query = """
@@ -76,7 +74,6 @@ query {
 """
 
 orgs = graphql(org_query)["account"]["organizations"]
-
 org_id = orgs[0]["id"]
 
 print("\n✅ Using organization:", orgs[0]["name"])
@@ -95,24 +92,16 @@ query ($orgId: OrganizationId!) {
 }
 """
 
-channels = graphql(
-    channels_query,
-    {"orgId": org_id}
-)["channels"]
+channels = graphql(channels_query, {"orgId": org_id})["channels"]
 
 supported_channels = []
 
 for c in channels:
-
-    if c["service"].lower() in [
-        "instagram",
-        "facebook",
-        "tiktok"
-    ]:
+    if c["service"].lower() in ["instagram", "facebook", "tiktok"]:
         supported_channels.append(c)
 
 # =========================================================
-# RANDOM VIDEO
+# PICK RANDOM VIDEO
 # =========================================================
 
 all_videos = [
@@ -124,17 +113,15 @@ if not all_videos:
     raise Exception("No UGC videos found")
 
 selected_video = random.choice(all_videos)
-
 VIDEO_URL = BASE_VIDEO_URL + selected_video
 
 print("\n✅ Selected UGC:", selected_video)
 
 # =========================================================
-# RANDOM CAPTION
+# PICK RANDOM CAPTION
 # =========================================================
 
 with open(CAPTION_FILE, "r", encoding="utf-8") as f:
-
     captions = [
         line.strip()
         for line in f
@@ -143,27 +130,34 @@ with open(CAPTION_FILE, "r", encoding="utf-8") as f:
 
 selected_caption = random.choice(captions)
 
+print("\n✅ Selected caption:", selected_caption)
+
 # =========================================================
-# SCHEDULE TIME
+# SCHEDULE TIME (FIXED)
 # =========================================================
 
 now = datetime.now(timezone.utc)
 
 scheduled = now.replace(
-    hour=22,
+    hour=18,
     minute=0,
     second=0,
     microsecond=0
 )
 
-scheduled = now.replace(hour=18, minute=0, second=0, microsecond=0)
+# ensure future time
+if scheduled <= now:
+    scheduled += timedelta(days=1)
+
+# small random offset to avoid platform patterning
+scheduled += timedelta(minutes=random.randint(-20, 20))
 
 scheduled_iso = scheduled.isoformat()
 
 print("\n✅ Scheduled UTC:", scheduled_iso)
 
 # =========================================================
-# MUTATION
+# GRAPHQL MUTATION
 # =========================================================
 
 mutation = """
@@ -186,36 +180,27 @@ mutation CreatePost($input: CreatePostInput!) {
 """
 
 # =========================================================
-# SEND
+# POST SENDER
 # =========================================================
 
 def send_post(channel, payload):
 
     print("\n===================================")
-    print(f"🚀 Posting {channel['service']}")
+    print(f"🚀 Posting {channel['service']} ({channel['name']})")
     print(json.dumps(payload, indent=2))
 
     try:
-
-        result = graphql(
-            mutation,
-            {"input": payload}
-        )
-
+        result = graphql(mutation, {"input": payload})
         post = result.get("createPost", {})
 
         if "message" in post:
-
             print("\n❌ BUFFER ERROR:")
             print(post["message"])
-
         else:
-
             print("\n✅ SUCCESS")
             print(json.dumps(result, indent=2))
 
     except Exception as e:
-
         print("\n❌ FAILED")
         print(e)
 
@@ -242,10 +227,7 @@ def build_payload(channel):
         ]
     }
 
-    # INSTAGRAM REEL
-
     if service == "instagram":
-
         payload["metadata"] = {
             "instagram": {
                 "type": "reel",
@@ -253,10 +235,7 @@ def build_payload(channel):
             }
         }
 
-    # FACEBOOK REEL
-
     elif service == "facebook":
-
         payload["metadata"] = {
             "facebook": {
                 "type": "reel"
@@ -270,14 +249,10 @@ def build_payload(channel):
 # =========================================================
 
 print("\n===================================")
-print("🎬 POSTING MONTHLY UGC")
+print("🎬 POSTING WEEKLY UGC")
 print("===================================")
 
 for c in supported_channels:
-
-    send_post(
-        c,
-        build_payload(c)
-    )
+    send_post(c, build_payload(c))
 
 print("\n✅ DONE")
